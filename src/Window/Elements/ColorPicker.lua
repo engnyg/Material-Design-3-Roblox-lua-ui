@@ -88,7 +88,7 @@ return function(container, props)
 	local infoY = PICKER_HEIGHT + 10 + (if alphaEnabled then ALPHA_HEIGHT + 10 else 0)
 	local panelHeight = infoY + 30
 	local panel = row.Extra(false)
-	panel.Size = UDim2.new(1, 0, 0, 0)
+	panel.Size = UDim2.new(1, 0, 0, panelHeight)
 	panel.AutomaticSize = Enum.AutomaticSize.None
 
 	-- Saturation (x) / value (y) square: hue background, a white->clear
@@ -282,11 +282,33 @@ return function(container, props)
 		paint()
 	end
 
-	-- Opens / closes by growing / shrinking the panel (the row follows its
-	-- height). Content is clipped only while it moves, so the cursors can
-	-- poke past the square's edges once it's open.
+	-- Opens / closes by tweening the row's own height; the row clips the
+	-- picker while it slides in / out. Its height is set explicitly instead
+	-- of through AutomaticSize: on devices that lags frames behind a tween
+	-- (the row stayed tall and empty after the picker had folded away).
+	local frame, body = row.Frame, row.Body
+	local bodyPadding = body:FindFirstChildOfClass("UIPadding")
+	local bodyLayout = body:FindFirstChildOfClass("UIListLayout")
+	frame.AutomaticSize = Enum.AutomaticSize.None
+	local function rowHeight(open: boolean): number
+		local height = row.Header.AbsoluteSize.Y + bodyPadding.PaddingTop.Offset + bodyPadding.PaddingBottom.Offset
+		if open then
+			height += bodyLayout.Padding.Offset + panelHeight
+		end
+		return height
+	end
+
 	element.Expanded = false
 	local motion = nil
+	local function fit()
+		if not motion then
+			frame.Size = UDim2.new(1, 0, 0, rowHeight(element.Expanded))
+		end
+	end
+	fit()
+	-- Title / description edits (or wrapping) change the header's height.
+	element._maid:GiveTask(row.Header:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit))
+
 	function element:SetExpanded(open: boolean)
 		if open == element.Expanded then
 			return
@@ -299,12 +321,12 @@ return function(container, props)
 		if previous then
 			previous:Cancel()
 		end
-		panel.ClipsDescendants = true
 		panel.Visible = true
+		local goal = { Size = UDim2.new(1, 0, 0, rowHeight(open)) }
 		if open then
-			motion = TweenService:Create(panel, Motion.Emphasized(Motion.Duration.Medium2), { Size = UDim2.new(1, 0, 0, panelHeight) })
+			motion = TweenService:Create(frame, Motion.Emphasized(Motion.Duration.Medium2), goal)
 		else
-			motion = TweenService:Create(panel, Motion.Emphasized(Motion.Duration.Short4), { Size = UDim2.new(1, 0, 0, 0) })
+			motion = TweenService:Create(frame, Motion.Emphasized(Motion.Duration.Short4), goal)
 		end
 		local thisMotion = motion
 		motion.Completed:Once(function()
@@ -312,8 +334,8 @@ return function(container, props)
 				return
 			end
 			motion = nil
-			panel.ClipsDescendants = false
 			panel.Visible = element.Expanded
+			fit()
 		end)
 		motion:Play()
 	end
