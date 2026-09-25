@@ -47,6 +47,17 @@ assert(chunk, loadErr)
 setfenv(chunk, getfenv())
 local MD3 = chunk()
 
+-- Most tests want the window on screen right away; the loading-screen tests
+-- near the end pass LoadingScreen explicitly.
+local createWindow = MD3.CreateWindow
+MD3.CreateWindow = function(selfOrProps, maybeProps)
+	local props = table.clone((if selfOrProps == MD3 then maybeProps else selfOrProps) or {})
+	if props.LoadingScreen == nil then
+		props.LoadingScreen = false
+	end
+	return createWindow(props)
+end
+
 local checks = 0
 local function check(cond, msg)
 	checks += 1
@@ -744,6 +755,87 @@ for _ = 1, 30 do
 	heartbeat:Fire(1 / 30)
 end
 check(wm.FPS == 60, "the watermark kept ticking after unload")
+
+-- Loading screen
+local loading = MD3.CreateWindow({ Title = "Loader Hub", Subtitle = "v2", Icon = "widgets", Parent = host, ConfigFolder = "LoaderHub", LoadingScreen = true })
+local splash = loading._loadingScreen
+check(splash ~= nil and splash.Instance.Parent == loading.Gui, "the loading screen was not shown")
+check(not loading.IsLoaded and not loading.Instance.Visible, "the window should wait for the loading screen")
+check(splash.Instance.Title.Text == "Loader Hub" and splash.Instance.Subtitle.Text == "v2", "loading screen should show the window title and subtitle")
+local loadedFired = 0
+loading.Loaded:Connect(function() loadedFired += 1 end)
+local loadingTab = loading:AddTab({ Title = "Main" })
+loadingTab:AddToggle({ Title = "Built while loading" })
+check(#loading.Tabs == 1, "the script should keep building the window while it loads")
+
+loading._iconsReady = false -- icon images still downloading
+heartbeat:Fire(0.6)
+local midway = splash.Progress
+check(midway > 0 and midway < 0.7, `progress while waiting for icons: {midway}`)
+heartbeat:Fire(1)
+check(not splash.Finished and splash.Progress < 0.7, "the loading screen should wait for the icon images")
+loading._iconsReady = true
+heartbeat:Fire(0.1)
+check(splash.Finished and splash.Progress == 1, "the loading screen did not finish once the icons were in")
+check(not loading.Instance.Visible and loadedFired == 0, "the window should appear after the fade-out, not before")
+flushTweens()
+check(loading.IsLoaded and loadedFired == 1 and loading.Instance.Visible, "the window was not shown after loading")
+check(splash.Instance.Parent == nil and loading._loadingScreen == nil, "the loading card was not removed")
+heartbeat:Fire(1)
+check(loadedFired == 1, "Loaded fired more than once")
+
+-- Minimum time, and hiding the window while it loads
+local hidden = MD3.CreateWindow({ Title = "Hidden Hub", Parent = host, ConfigFolder = "LoaderHub", LoadingScreen = { Title = "Custom", Duration = 3 } })
+local hiddenSplash = hidden._loadingScreen
+check(hiddenSplash.Instance.Title.Text == "Custom", "LoadingScreen.Title not used")
+hidden:Toggle()
+check(hidden.Visible == false and not hidden.Instance.Visible, "toggling during loading should only record the wish")
+hidden:Toggle()
+check(hidden.Visible == true and not hidden.Instance.Visible, "showing the window during loading should wait for the loading screen")
+hidden:Toggle()
+heartbeat:Fire(2)
+check(not hiddenSplash.Finished, "LoadingScreen.Duration should keep it up for 3 s")
+heartbeat:Fire(1.5)
+flushTweens()
+check(hidden.IsLoaded and not hidden.Instance.Visible, "a window hidden during loading should stay hidden")
+hidden:Toggle()
+check(hidden.Instance.Visible, "the window did not show after loading")
+hidden:Destroy()
+
+-- SkipLoading, and unloading mid-way
+local skipped = MD3.CreateWindow({ Title = "Skip Hub", Parent = host, ConfigFolder = "LoaderHub", LoadingScreen = true })
+skipped:SkipLoading()
+flushTweens()
+check(skipped.IsLoaded and skipped.Instance.Visible, "SkipLoading did not show the window")
+skipped:Destroy()
+local unloadedEarly = MD3.CreateWindow({ Title = "Early Hub", Parent = host, ConfigFolder = "LoaderHub", LoadingScreen = true })
+local earlyCard = unloadedEarly._loadingScreen.Instance
+unloadedEarly:Destroy()
+heartbeat:Fire(5)
+flushTweens()
+check(earlyCard.Parent == nil and not unloadedEarly.IsLoaded, "unloading during the loading screen left it behind")
+
+-- The player's on/off switch (saved for the next run)
+loading:AddSettingsTab()
+local loadingSwitch = findElement(loading, "Loading animation")
+check(loadingSwitch ~= nil and loadingSwitch.Value == true, "the settings tab should have the loading animation switch, on")
+loadingSwitch:Set(false)
+check(files["LoaderHub/loading.txt"] == "off" and not loading:GetLoadingScreenEnabled(), "turning the switch off was not saved")
+loading:Destroy()
+local noSplash = MD3.CreateWindow({ Title = "Next Run", Parent = host, ConfigFolder = "LoaderHub", LoadingScreen = true })
+check(noSplash._loadingScreen == nil and noSplash.IsLoaded and noSplash.Instance.Visible, "the saved off switch was ignored")
+noSplash:SetLoadingScreenEnabled(true)
+noSplash:Destroy()
+local again = MD3.CreateWindow({ Title = "Run After", Parent = host, ConfigFolder = "LoaderHub", LoadingScreen = true })
+check(again._loadingScreen ~= nil, "turning the switch back on was ignored")
+again:Destroy()
+
+-- LoadingScreen = false from the script: never shown, no switch in settings
+local scriptOff = MD3.CreateWindow({ Title = "Script Off", Parent = host, ConfigFolder = "LoaderHub", LoadingScreen = false })
+check(scriptOff._loadingScreen == nil and scriptOff.IsLoaded and not scriptOff:GetLoadingScreenEnabled(), "LoadingScreen = false was not respected")
+scriptOff:AddSettingsTab()
+check(findElement(scriptOff, "Loading animation") == nil, "no loading switch when the script turned it off")
+scriptOff:Destroy()
 
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.

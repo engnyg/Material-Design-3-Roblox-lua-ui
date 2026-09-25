@@ -21,6 +21,7 @@ local Window = MD3:CreateWindow({
     ToggleKey = Enum.KeyCode.RightShift, -- 顯示／隱藏視窗
     ConfigFolder = "MyHub",              -- 設定檔存放資料夾（executor workspace）
     IconStyle = "Outlined",              -- 圖標樣式："Outlined"（預設）| "Filled" | "Round" | "Sharp"
+    LoadingScreen = true,                -- 啟動時的載入動畫；false 關閉
 })
 
 local Main = Window:AddTab({ Title = "Main", Icon = "home" })
@@ -48,6 +49,10 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 ### 視窗功能
 
 - **可拖曳**的 M3 視窗：頂部 App Bar（標題／副標題／縮小／關閉）、左側 Navigation Drawer 分頁、右側可捲動內容區。
+- **載入動畫**：腳本啟動時先顯示一張 M3 卡片（圖標、標題、副標題、進度條、狀態文字），等 Material 圖標圖片下載好（最多等 5 秒）、至少顯示 1.2 秒後淡出，視窗再放大出現。不會卡住腳本：`CreateWindow` 立刻回傳，你照常建立分頁，載入期間按切換鍵只會記住要不要顯示。
+  - **開關**：腳本裡 `LoadingScreen = false` 直接關掉（設定頁也不會出現開關）；玩家可以在設定頁 Interface 區塊用「Loading animation」開關，存在 `ConfigFolder/loading.txt`，**下次執行**生效（程式裡用 `Window:SetLoadingScreenEnabled(bool)`／`GetLoadingScreenEnabled()`）。
+  - **自訂**：`LoadingScreen = { Title = "My Hub", Subtitle = "Loading...", Icon = "widgets", Duration = 2 }`（`Duration` 是最少顯示秒數）。
+  - `Window.Loaded` 在視窗出現後觸發一次、`Window.IsLoaded` 表示是否載入完成（`if not Window.IsLoaded then Window.Loaded:Wait() end`）；`Window:SkipLoading()` 立刻結束載入動畫。
 - **可調大小**：拖右下角的把手縮放視窗（最小 420×280），放開後自動記住，下次執行會還原（存在 `ConfigFolder/window.json`；`RememberSize = false` 可關閉）。程式裡用 `Window:SetSize(w, h)`／`GetSize()`／`ResetSize()`；設定頁也有「Reset window size」。
 - **切換鍵**（預設 RightShift）隱藏／顯示；關閉鈕會跳出 M3 對話框讓你選「隱藏」或「卸載（Unload）」。
 - **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
@@ -78,7 +83,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
-`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SkipLoading`、`SetLoadingScreenEnabled`／`GetLoadingScreenEnabled`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
 
 ### HUD（浮水印、快捷鍵列表、狀態指示）
 
