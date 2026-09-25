@@ -1,0 +1,21 @@
+{
+  "name": "MaterialDesign3",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "MaterialDesign3": {
+        "$path": "src"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "MD3Example": {
+          "$path": "example"
+        }
+      }
+    }
+  }
+}
