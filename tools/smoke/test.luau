@@ -938,11 +938,12 @@ local bgWin = MD3.CreateWindow({ Title = "Background Hub", Parent = host, Config
 local bgImage = bgWin._background
 local bgSource, bgTransparency = bgWin:GetBackground()
 check(bgSource == logoUrl and bgImage.Visible and bgImage.Image ~= "", "CreateWindow Background was not loaded")
-check(near(bgTransparency, 0.4) and near(bgImage.ImageTransparency, 0.4), "default background transparency should be 0.4")
-check(bgImage.Parent == bgWin.Instance and bgImage.ZIndex < bgWin.Instance.TopBar.ZIndex, "the background should sit behind the window content")
-check(bgImage:FindFirstChild("UICorner") ~= nil and bgImage.Size == UDim2.fromScale(1, 1), "the background should fill the window with rounded corners")
+local bgGroup = bgWin._backgroundGroup
+check(near(bgTransparency, 0.4) and near(bgGroup.GroupTransparency, 0.4), "default background transparency should be 0.4")
+check(bgImage.Parent == bgGroup and bgGroup.Parent == bgWin.Instance and bgGroup.ZIndex < bgWin.Instance.TopBar.ZIndex, "the background should sit behind the window content")
+check(bgGroup:FindFirstChild("UICorner") ~= nil and bgGroup.Size == UDim2.fromScale(1, 1) and bgImage.Size == UDim2.fromScale(1, 1), "the background should fill the window with rounded corners")
 bgWin:SetBackgroundTransparency(0.7)
-check(near(bgImage.ImageTransparency, 0.7), "SetBackgroundTransparency failed")
+check(near(bgGroup.GroupTransparency, 0.7), "SetBackgroundTransparency failed")
 local shownImage = bgImage.Image
 local bgOk, bgErr = bgWin:SetBackground("https://example.com/notfound")
 check(not bgOk and bgErr ~= nil and bgImage.Image == shownImage and bgWin:GetBackground() == logoUrl, "a failed image should keep the current background")
@@ -957,13 +958,45 @@ check(not bgImage.Visible and bgWin:GetBackground() == nil, "clearing the backgr
 bgInput:Set("https://example.com/notfound")
 check(bgInput.Value == "" and not bgImage.Visible and toasts(bgWin) == 1, "a bad URL should notify and put the field back")
 bgSlider:Set(20)
-check(near(bgImage.ImageTransparency, 0.2), "the transparency slider did not apply")
+check(near(bgGroup.GroupTransparency, 0.2), "the transparency slider did not apply")
 bgWin:SetBackground(logoUrl, 0.5)
 check(bgInput.Value == logoUrl and bgSlider.Value == 50, "SetBackground from code should update the settings controls")
 findElement(bgWin, "Remove background"):Fire()
 check(not bgImage.Visible and bgInput.Value == "", "Remove background failed")
 check(bgWin:LoadConfig("bg"), "loading the background config failed")
-check(bgImage.Visible and bgWin:GetBackground() == logoUrl and near(bgImage.ImageTransparency, 0.7), "the background was not restored from the config")
+check(bgImage.Visible and bgWin:GetBackground() == logoUrl and near(bgGroup.GroupTransparency, 0.7), "the background was not restored from the config")
+
+do -- own scope: the file is near Luau's 200-locals limit
+-- Blur: offset copies averaged evenly, clipped by the group
+check(#bgWin._backgroundLayers == 1 and bgWin:GetBackgroundBlur() == 0, "no blur copies by default")
+bgWin:SetBackgroundBlur(8)
+local layers = bgWin._backgroundLayers
+check(#layers == 13 and layers[1] == bgImage, "blur should draw the image plus 12 copies")
+local weightsOk, sameImage, allInGroup = true, true, true
+for i, layer in layers do
+	weightsOk = weightsOk and near(layer.ImageTransparency, 1 - 1 / i) and layer.ZIndex == i
+	sameImage = sameImage and layer.Image == bgImage.Image
+	allInGroup = allInGroup and layer.Parent == bgGroup and layer.Size == UDim2.new(1, 16, 1, 16)
+end
+check(weightsOk, "blur copies should be weighted 1/i so they average evenly")
+check(sameImage and allInGroup, "blur copies should show the same image, padded, inside the group")
+local outer = layers[13].Position
+check(near(math.sqrt(outer.X.Offset ^ 2 + outer.Y.Offset ^ 2), 8) and near(math.sqrt(layers[2].Position.X.Offset ^ 2 + layers[2].Position.Y.Offset ^ 2), 4), "blur rings at half and full radius")
+bgWin:SetBackgroundBlur(99)
+check(bgWin:GetBackgroundBlur() == 24, "blur should stop at 24 px")
+bgWin:SetBackground("rbxassetid://777")
+check(layers[5].Image == "rbxassetid://777", "blur copies should follow a new image")
+local blurSlider = bgWin.Flags.MD3_BackgroundBlur
+check(blurSlider ~= nil and blurSlider.Value == 24, "the blur slider should show the current blur")
+blurSlider:Set(0)
+check(#bgWin._backgroundLayers == 1 and bgImage.Size == UDim2.fromScale(1, 1) and bgImage.ImageTransparency == 0, "blur 0 should go back to the single image")
+bgWin:SetBackground(nil)
+bgWin:SetBackgroundBlur(10)
+check(#bgWin._backgroundLayers == 1, "no copies without an image")
+local blurStart = MD3.CreateWindow({ Title = "Blur Start", Parent = host, Background = logoUrl, BackgroundBlur = 6 })
+check(blurStart:GetBackgroundBlur() == 6 and #blurStart._backgroundLayers == 13, "CreateWindow BackgroundBlur")
+blurStart:Destroy()
+end
 bgWin:Destroy()
 
 do -- own scope: the file is near Luau's 200-locals limit
