@@ -44,6 +44,7 @@ function Snackbar.new(props)
 		Parent = root,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 8),
@@ -58,6 +59,7 @@ function Snackbar.new(props)
 		Text = "",
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = root.ZIndex,
+		LayoutOrder = 1,
 		Parent = root,
 	}
 	Typography.Apply(label, "BodyMedium")
@@ -103,6 +105,7 @@ function Snackbar:Show(message: string, action, duration: number?)
 			Text = action.Text,
 			Variant = "Text",
 			Theme = self._theme,
+			LayoutOrder = 2,
 			Parent = self.Instance,
 		})
 		self._actionButton.Instance.ZIndex = self.Instance.ZIndex

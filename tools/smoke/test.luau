@@ -396,4 +396,27 @@ check(unloaded and Window._destroyed, "re-created window did not replace the old
 second:Destroy()
 check(second.Gui.Parent == nil, "Window:Destroy left the ScreenGui behind")
 
+-- UIListLayout sorts by Name unless told otherwise, which scrambled the
+-- dialog (actions above the title). Every layout must sort by LayoutOrder.
+local layouts, unsorted = 0, 0
+for _, inst in MOCK_INSTANCES do
+	if inst.ClassName == "UIListLayout" then
+		layouts += 1
+		if inst.SortOrder ~= Enum.SortOrder.LayoutOrder then
+			unsorted += 1
+		end
+	end
+end
+check(layouts > 50 and unsorted == 0, `{unsorted} of {layouts} UIListLayouts don't sort by LayoutOrder`)
+
+-- Dialog: title, body, actions in that order; no full-size catcher inside the layout
+local layoutWindow = MD3.CreateWindow({ Title = "Layout test", Parent = host })
+local ordered = layoutWindow:Dialog({ Title = "T", Content = "C", Buttons = { { Title = "A" }, { Title = "B" } } })
+local card = ordered._card
+check(card.ClassName == "TextButton", "Dialog card should catch clicks itself")
+check(card:FindFirstChild("CardCatcher") == nil, "Dialog still has a CardCatcher inside its layout")
+check(card.Title.LayoutOrder < card.Body.LayoutOrder and card.Body.LayoutOrder < card.Actions.LayoutOrder, "Dialog content order wrong")
+check(ordered._buttons[1].Instance.LayoutOrder < ordered._buttons[2].Instance.LayoutOrder, "Dialog action order wrong")
+layoutWindow:Destroy()
+
 print(`smoke test passed ({checks} checks)`)

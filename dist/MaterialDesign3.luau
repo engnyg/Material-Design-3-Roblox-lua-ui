@@ -136,6 +136,7 @@ function Button.new(props)
 	self._padding = padding
 
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -710,6 +711,7 @@ function Chip.new(props)
 		Parent = content,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -932,8 +934,12 @@ function Dialog.new(props)
 		ZIndex = props.ZIndex or 100,
 	}
 
-	local card = Create("Frame") {
+	-- A TextButton (not a Frame) so clicks on the card are caught here and
+	-- don't fall through to the scrim, which dismisses the dialog.
+	local card = Create("TextButton") {
 		Name = "Card",
+		AutoButtonColor = false,
+		Text = "",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = props.Size or UDim2.new(0, 320, 0, 0),
@@ -951,26 +957,12 @@ function Dialog.new(props)
 		Parent = card,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 16),
 		Parent = card,
 	}
 	self._card = card
-
-	-- Blocks clicks inside the card from falling through to the scrim button
-	-- behind it. Added first so later content (buttons, etc.) still sits on
-	-- top for hit-testing.
-	if props.DismissOnScrimClick ~= false then
-		Create("TextButton") {
-			Name = "CardCatcher",
-			AutoButtonColor = false,
-			Text = "",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			ZIndex = card.ZIndex,
-			Parent = card,
-		}
-	end
 
 	local title = Create("TextLabel") {
 		Name = "Title",
@@ -1012,17 +1004,19 @@ function Dialog.new(props)
 		Parent = card,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 		Padding = UDim.new(0, 8),
 		Parent = actionsRow,
 	}
 
-	for _, action in ipairs(props.Actions or {}) do
+	for index, action in ipairs(props.Actions or {}) do
 		local btn = Button.new({
 			Text = action.Text,
 			Variant = action.Variant or "Text",
 			Theme = self._theme,
+			LayoutOrder = index,
 			Parent = actionsRow,
 		})
 		btn.Instance.ZIndex = card.ZIndex
@@ -1226,6 +1220,7 @@ function FAB.new(props)
 	}
 
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -1591,6 +1586,7 @@ function NavigationBar.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -1618,6 +1614,7 @@ function NavigationBar.new(props)
 			Parent = item,
 		}
 		Create("UIListLayout") {
+			SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			Padding = UDim.new(0, 4),
@@ -2157,14 +2154,16 @@ function RadioButton.Group(options, initialValue, parent, theme)
 	group._buttons = {}
 	group.Value = initialValue
 
-	for _, option in ipairs(options) do
+	for index, option in ipairs(options) do
 		local row = Create("Frame") {
 			Name = "Option",
+			LayoutOrder = index,
 			BackgroundTransparency = 1,
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Size = UDim2.new(1, 0, 0, 0),
 			Parent = parent,
 			[1] = Create("UIListLayout") {
+				SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 				FillDirection = Enum.FillDirection.Horizontal,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				Padding = UDim.new(0, 4),
@@ -2174,6 +2173,7 @@ function RadioButton.Group(options, initialValue, parent, theme)
 		local radio = RadioButton.new({
 			Theme = theme,
 			Selected = option.Value == initialValue,
+			LayoutOrder = 1,
 			Parent = row,
 		})
 
@@ -2186,6 +2186,7 @@ function RadioButton.Group(options, initialValue, parent, theme)
 				Size = UDim2.new(0, 0, 1, 0),
 				Text = option.Text,
 				TextColor3 = (theme or Theme.Default()).Colors.OnSurface,
+				LayoutOrder = 2,
 				Parent = row,
 			}
 			Typography.Apply(label, "BodyLarge")
@@ -2517,6 +2518,7 @@ function Snackbar.new(props)
 		Parent = root,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 8),
@@ -2531,6 +2533,7 @@ function Snackbar.new(props)
 		Text = "",
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = root.ZIndex,
+		LayoutOrder = 1,
 		Parent = root,
 	}
 	Typography.Apply(label, "BodyMedium")
@@ -2576,6 +2579,7 @@ function Snackbar:Show(message: string, action, duration: number?)
 			Text = action.Text,
 			Variant = "Text",
 			Theme = self._theme,
+			LayoutOrder = 2,
 			Parent = self.Instance,
 		})
 		self._actionButton.Instance.ZIndex = self.Instance.ZIndex
@@ -2879,6 +2883,7 @@ function TextField.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 4),
 		Parent = root,
@@ -3124,6 +3129,7 @@ function TopAppBar.new(props)
 		Parent = root,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 4),

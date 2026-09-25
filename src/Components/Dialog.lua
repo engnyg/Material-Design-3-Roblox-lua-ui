@@ -46,8 +46,12 @@ function Dialog.new(props)
 		ZIndex = props.ZIndex or 100,
 	}
 
-	local card = Create("Frame") {
+	-- A TextButton (not a Frame) so clicks on the card are caught here and
+	-- don't fall through to the scrim, which dismisses the dialog.
+	local card = Create("TextButton") {
 		Name = "Card",
+		AutoButtonColor = false,
+		Text = "",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = props.Size or UDim2.new(0, 320, 0, 0),
@@ -65,26 +69,12 @@ function Dialog.new(props)
 		Parent = card,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 16),
 		Parent = card,
 	}
 	self._card = card
-
-	-- Blocks clicks inside the card from falling through to the scrim button
-	-- behind it. Added first so later content (buttons, etc.) still sits on
-	-- top for hit-testing.
-	if props.DismissOnScrimClick ~= false then
-		Create("TextButton") {
-			Name = "CardCatcher",
-			AutoButtonColor = false,
-			Text = "",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			ZIndex = card.ZIndex,
-			Parent = card,
-		}
-	end
 
 	local title = Create("TextLabel") {
 		Name = "Title",
@@ -126,17 +116,19 @@ function Dialog.new(props)
 		Parent = card,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 		Padding = UDim.new(0, 8),
 		Parent = actionsRow,
 	}
 
-	for _, action in ipairs(props.Actions or {}) do
+	for index, action in ipairs(props.Actions or {}) do
 		local btn = Button.new({
 			Text = action.Text,
 			Variant = action.Variant or "Text",
 			Theme = self._theme,
+			LayoutOrder = index,
 			Parent = actionsRow,
 		})
 		btn.Instance.ZIndex = card.ZIndex
