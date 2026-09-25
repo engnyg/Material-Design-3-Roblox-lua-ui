@@ -545,14 +545,20 @@ do -- Opening the color picker: animated, header-only press feedback
 	flushTweens()
 	check(touch ~= nil and touch.ClipsDescendants and touch.Size.Y.Offset == 50, "press feedback should cover only the header")
 	check(touch:FindFirstChild("StateLayer") ~= nil and rowFrame:FindFirstChild("StateLayer") == nil, "the state layer should live on the header")
-	check(not plainPicker.Expanded and not panel.Visible and panel.Size.Y.Offset == 0, "the picker should start closed")
+	-- The row's height is managed by the picker (AutomaticSize lags on
+	-- devices): header 40 (mock) + padding 10 + 10, plus 8 + 168 when open.
+	local function rowHeight()
+		return rowFrame.Size.Y.Offset
+	end
+	check(rowFrame.AutomaticSize == Enum.AutomaticSize.None and rowFrame.ClipsDescendants, "the row should size itself and clip the picker")
+	check(not plainPicker.Expanded and not panel.Visible and rowHeight() == 60, "the picker should start closed")
+	check(panel.Size.Y.Offset == 168, "the picker keeps its full size and slides in with the row")
 
 	tap(10) -- on the header
-	check(plainPicker.Expanded and panel.Visible and panel.Size.Y.Offset == 168, "a header tap should open the picker to its full height")
-	check(panel.ClipsDescendants, "the panel should clip while it grows")
+	check(plainPicker.Expanded and panel.Visible and rowHeight() == 236, "a header tap should grow the row to fit the picker")
 	check(ripples() == 1, "a header tap should ripple on the header")
 	flushTweens()
-	check(not panel.ClipsDescendants and panel.Visible, "once open the panel should stop clipping (cursors can poke out)")
+	check(panel.Visible and rowHeight() == 236, "the picker should stay open")
 
 	local ripplesBefore = ripples() -- the mock never runs the ripple's fade-out delay
 	tap(100) -- inside the open picker, below the header
@@ -560,17 +566,22 @@ do -- Opening the color picker: animated, header-only press feedback
 	check(ripples() == ripplesBefore, "no ripple over the open picker")
 
 	tap(10)
-	check(not plainPicker.Expanded and panel.Size.Y.Offset == 0 and panel.Visible, "a header tap should start closing it")
+	check(not plainPicker.Expanded and rowHeight() == 60 and panel.Visible, "a header tap should start closing it")
 	flushTweens()
-	check(not panel.Visible, "the panel should hide once closed")
+	check(not panel.Visible and rowHeight() == 60, "the panel should hide once closed")
 
 	plainPicker:SetExpanded(true)
 	plainPicker:SetExpanded(false)
 	plainPicker:SetExpanded(true) -- re-opened mid-animation
 	flushTweens()
-	check(plainPicker.Expanded and panel.Visible and panel.Size.Y.Offset == 168 and not panel.ClipsDescendants, "re-opening mid-animation should end open")
+	check(plainPicker.Expanded and panel.Visible and rowHeight() == 236, "re-opening mid-animation should end open")
 	plainPicker:SetExpanded(false)
 	flushTweens()
+
+	-- A taller header (e.g. a wrapped title) refits the row.
+	rowFrame.Body.Header.AbsoluteSize = Vector2.new(100, 60)
+	check(rowHeight() == 80, "the row should follow its header's height")
+	rowFrame.Body.Header.AbsoluteSize = Vector2.new(100, 40)
 
 	-- Touch-only devices: no hover tint (MouseLeave often never comes)
 	uis.TouchEnabled, uis.MouseEnabled = true, false
