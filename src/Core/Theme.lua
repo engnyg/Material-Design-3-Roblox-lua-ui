@@ -152,6 +152,11 @@ end
 --   Icon         = OnSurfaceVariant      (regular icons)
 --   IconAccent   = Primary               (app icon, notification icons)
 --   IconSelected = OnSecondaryContainer  (the selected navigation item)
+-- Overrides cascade so one color can restyle a whole group:
+--   * OnSurface (text) -> OnSurfaceVariant (secondary text, a softer mix of
+--     the text and background colors) and OnBackground follow it
+--   * Icon -> IconAccent and IconSelected follow it
+-- unless those roles are overridden themselves.
 function Theme:_build()
 	local colors = buildScheme(self._palettes, self.Mode == "Dark")
 	local overrides = self._overrides
@@ -163,10 +168,30 @@ function Theme:_build()
 			colors[onRole] = self:ContrastColor(colors[role])
 		end
 	end
+	if (overrides.OnSurface or overrides.Surface) and not overrides.OnSurfaceVariant then
+		colors.OnSurfaceVariant = Color.Blend(colors.OnSurface, colors.Surface, 0.3)
+	end
+	if overrides.OnSurface and not overrides.OnBackground then
+		colors.OnBackground = colors.OnSurface
+	end
 	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
-	colors.IconAccent = overrides.IconAccent or colors.Primary
-	colors.IconSelected = overrides.IconSelected or colors.OnSecondaryContainer
+	colors.IconAccent = overrides.IconAccent or overrides.Icon or colors.Primary
+	colors.IconSelected = overrides.IconSelected or overrides.Icon or colors.OnSecondaryContainer
 	return colors
+end
+
+-- One-call helpers for the three colors people most want to change.
+-- nil returns that color to the generated default.
+function Theme:SetThemeColor(color: Color3)
+	self:SetSeedColor(color)
+end
+
+function Theme:SetTextColor(color: Color3?)
+	self:SetOverride("OnSurface", color)
+end
+
+function Theme:SetIconColor(color: Color3?)
+	self:SetOverride("Icon", color)
 end
 
 function Theme.new(seed: Color3?, mode: string?)

@@ -454,6 +454,42 @@ find("Import theme"):Set(json)
 check(wt.Colors.Tertiary == red, "import input did not apply the theme")
 wt:ClearOverrides()
 
+--== Theme / icon / text color (one control each) ==--
+local white = Color3.new(1, 1, 1)
+wt:SetTextColor(white)
+check(wt.Colors.OnSurface == white and wt.Colors.OnBackground == white, "SetTextColor did not set the text color")
+check(wt.Colors.OnSurfaceVariant == MD3.Color.Blend(white, wt.Colors.Surface, 0.3), "secondary text should follow the text color")
+check(wt.Colors.Icon == wt.Colors.OnSurfaceVariant, "icons should follow the text color by default")
+wt:SetIconColor(green)
+check(wt.Colors.Icon == green and wt.Colors.IconAccent == green and wt.Colors.IconSelected == green, "SetIconColor should recolor every icon")
+wt:SetOverride("IconAccent", red)
+check(wt.Colors.IconAccent == red and wt.Colors.Icon == green, "a specific icon role override should win")
+wt:ClearOverrides()
+
+local appearance = settings._sections[1]
+local function findIn(section, title)
+	for _, element in section._elements do
+		if element._title and element._title.Text == title then
+			return element
+		end
+	end
+	error(`no "{title}" in {section._header.Text}`)
+end
+check(findIn(appearance, "Theme color") == Window.Flags.MD3_Accent, "Theme color picker missing")
+local iconPicker, textPicker = findIn(appearance, "Icon color"), findIn(appearance, "Text color")
+check(iconPicker.Value == wt.Colors.Icon and textPicker.Value == wt.Colors.OnSurface, "quick pickers not showing current colors")
+iconPicker:Set(green)
+textPicker:Set(white)
+check(wt.Colors.Icon == green and wt.Colors.OnSurface == white, "quick pickers did not recolor")
+check(iconPicker._desc.Text == "Custom" and textPicker._desc.Text == "Custom", "quick pickers not marked custom")
+check(plainIcon.TextColor3 == green, "existing icons did not follow the icon color")
+findIn(appearance, "Reset icon & text colors"):Fire()
+check(not wt:IsOverridden("Icon") and not wt:IsOverridden("OnSurface") and textPicker.Value == wt.Colors.OnSurface, "reset icon & text colors failed")
+
+local colored = MD3.CreateWindow({ Title = "Colors", Parent = host, ThemeColor = Color3.fromHex("#006E1C"), TextColor = white, IconColor = red })
+check(colored.Theme.Seed:ToHex() == "006e1c" and colored.Theme.Colors.OnSurface == white and colored.Theme.Colors.Icon == red, "CreateWindow ThemeColor/TextColor/IconColor")
+colored:Destroy()
+
 -- Theme switch with the whole window alive
 Window.Theme:Toggle()
 Window.Theme:SetSeedColor(Color3.fromHex("#B3261E"))

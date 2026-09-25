@@ -5,11 +5,14 @@
 		Title = "My Hub",
 		Subtitle = "v1.0",
 		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
-		IconColor = nil,                   -- app icon color: theme role or Color3 (default "IconAccent")
+		ThemeColor = Color3.fromHex("#6750A4"), -- theme (seed) color the palette is generated from
+		IconColor = nil,                   -- color of every icon (Color3); default follows the theme
+		TextColor = nil,                   -- color of all text (Color3); secondary text follows it
+		AppIconColor = nil,                -- just the title-bar icon: theme role or Color3
 		Logo = "https://.../logo.png",     -- colored image shown instead of Icon (not tinted)
 		Size = UDim2.fromOffset(600, 420),
 		Mode = "Dark",                     -- "Light" | "Dark"
-		Seed = Color3.fromHex("#6750A4"),  -- accent / seed color
+		Seed = nil,                        -- same as ThemeColor
 		ToggleKey = Enum.KeyCode.RightShift,
 		ConfigFolder = "MyHub",            -- where configs are saved (executor workspace)
 		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
@@ -159,7 +162,13 @@ function Window.new(props)
 		end)
 	end
 
-	self.Theme = props.Theme or Theme.new(props.Seed or props.Accent, props.Mode or "Dark")
+	self.Theme = props.Theme or Theme.new(props.ThemeColor or props.Seed or props.Accent, props.Mode or "Dark")
+	if props.TextColor then
+		self.Theme:SetTextColor(props.TextColor)
+	end
+	if props.IconColor then
+		self.Theme:SetIconColor(props.IconColor)
+	end
 	self._themer = Themer.new(self.Theme)
 	local themer = self._themer
 
@@ -225,7 +234,7 @@ function Window.new(props)
 	local appIconSource = props.Logo or props.Icon
 	local hasAppIcon = appIconSource ~= nil and Base.CanShowIcon(appIconSource)
 	if hasAppIcon then
-		local appIcon = Base.Glyph(themer, appIconSource, 24, props.IconColor or "IconAccent", topBar, props.Logo == nil)
+		local appIcon = Base.Glyph(themer, appIconSource, 24, props.AppIconColor or "IconAccent", topBar, props.Logo == nil)
 		appIcon.AnchorPoint = Vector2.new(0, 0.5)
 		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
 		-- A glyph may still be waiting for the icon images; a failed image won't come back.
@@ -728,14 +737,55 @@ function Window:AddSettingsTab(props)
 		end,
 	})
 	local accent = appearance:AddColorPicker({
-		Title = "Accent color",
-		Description = "Seed color the whole palette is generated from",
+		Title = "Theme color",
+		Description = "The whole palette is generated from this color",
 		Default = self.Theme.Seed,
 		Flag = "MD3_Accent",
 		Callback = function(color)
 			self.Theme:SetSeedColor(color)
 		end,
 	})
+
+	-- Icon and text color: overrides (saved with the theme editor's
+	-- MD3_ThemeOverrides flag), shown as the current color when not custom.
+	local quick = {
+		{ Role = "Icon", Title = "Icon color", Auto = "Follows the text color", Set = "SetIconColor" },
+		{ Role = "OnSurface", Title = "Text color", Auto = "Generated from the theme color", Set = "SetTextColor" },
+	}
+	local quickPickers = {}
+	local editingQuick = nil
+	for _, entry in quick do
+		quickPickers[entry.Role] = appearance:AddColorPicker({
+			Title = entry.Title,
+			Default = self.Theme.Colors[entry.Role],
+			Callback = function(color)
+				editingQuick = entry.Role
+				self.Theme[entry.Set](self.Theme, color)
+				editingQuick = nil
+			end,
+		})
+	end
+	appearance:AddButton({
+		Title = "Reset icon & text colors",
+		Icon = "refresh",
+		Callback = function()
+			local overrides = self.Theme:GetOverrides()
+			overrides.Icon, overrides.OnSurface = nil, nil
+			self.Theme:SetOverrides(overrides)
+		end,
+	})
+	local function refreshQuick()
+		for _, entry in quick do
+			local picker = quickPickers[entry.Role]
+			local color = self.Theme.Colors[entry.Role]
+			if editingQuick ~= entry.Role and picker.Value ~= color then
+				picker:Set(color, true)
+			end
+			picker:SetDescription(if self.Theme:IsOverridden(entry.Role) then "Custom" else entry.Auto)
+		end
+	end
+	refreshQuick()
+	self._maid:GiveTask(self.Theme.Changed:Connect(refreshQuick))
 
 	-- Icon style needs file functions + getcustomasset to load the images.
 	if Env.CanUseCustomAssets then
