@@ -550,9 +550,25 @@ restoredWindow:Destroy()
 local fixedWindow = MD3.CreateWindow({ Title = "Fixed size", Parent = host, ConfigFolder = "SmokeHub", RememberSize = false, Size = UDim2.fromOffset(500, 350) })
 check(fixedWindow:GetSize().X.Offset == 500, "RememberSize = false should ignore the saved size")
 fixedWindow:Destroy()
-Window:Minimize(true)
-check(not grip.Visible, "resize handle should hide while minimized")
-Window:Minimize(false)
+-- Minimize folds up into the title bar and restore unfolds downward: the top
+-- edge (center minus half the scaled height) must not move, at any UIScale.
+local function topEdge()
+	local main = Window.Instance
+	return main.Position.Y.Offset - main.Size.Y.Offset * Window._uiScale.Scale / 2
+end
+local savedScale = Window._uiScale.Scale
+for _, uiScale in { 1, 0.8 } do
+	Window._uiScale.Scale = uiScale
+	local top, fullHeight = topEdge(), Window.Instance.Size.Y.Offset
+	Window:Minimize(true)
+	check(not grip.Visible, "resize handle should hide while minimized")
+	check(Window.Instance.Size.Y.Offset < fullHeight, "Minimize did not shrink the window")
+	check(math.abs(topEdge() - top) < 1e-6, `Minimize moved the top edge at scale {uiScale}`)
+	Window:Minimize(false)
+	check(Window.Instance.Size.Y.Offset == fullHeight, "restore did not return to full height")
+	check(math.abs(topEdge() - top) < 1e-6, `restore did not expand downward at scale {uiScale}`)
+end
+Window._uiScale.Scale = savedScale
 
 local colored = MD3.CreateWindow({ Title = "Colors", Parent = host, ThemeColor = Color3.fromHex("#006E1C"), TextColor = white, IconColor = red })
 check(colored.Theme.Seed:ToHex() == "006e1c" and colored.Theme.Colors.OnSurface == white and colored.Theme.Colors.Icon == red, "CreateWindow ThemeColor/TextColor/IconColor")

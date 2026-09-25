@@ -637,19 +637,30 @@ function Window:Minimize(minimized: boolean?)
 	local main = self.Instance
 	local ti = Motion.Emphasized(Motion.Duration.Medium2)
 	self._grip.Visible = not minimized
+
+	local targetSize = if minimized
+		then UDim2.new(self._size.X.Scale, self._size.X.Offset, 0, TOP_BAR_HEIGHT)
+		else self._size
+	-- `main` is anchored at its center, so resizing alone would collapse and
+	-- expand around the middle. Shift the center by half the height change
+	-- (in screen pixels, hence the UIScale) so the top bar stays put: the
+	-- window folds up into its title bar and unfolds downward. Measured from
+	-- the current size so an interrupted tween stays anchored too.
+	local heightDelta = (targetSize.Y.Offset - main.Size.Y.Offset) * self._uiScale.Scale
+	local position = main.Position
+	local targetPosition = UDim2.new(position.X.Scale, position.X.Offset, position.Y.Scale, position.Y.Offset + heightDelta / 2)
+
+	if not minimized then
+		self._body.Visible = true
+	end
+	local tween = TweenService:Create(main, ti, { Size = targetSize, Position = targetPosition })
+	tween:Play()
 	if minimized then
-		local tween = TweenService:Create(main, ti, {
-			Size = UDim2.new(self._size.X.Scale, self._size.X.Offset, 0, TOP_BAR_HEIGHT),
-		})
-		tween:Play()
 		tween.Completed:Once(function()
 			if self.Minimized then
 				self._body.Visible = false
 			end
 		end)
-	else
-		self._body.Visible = true
-		TweenService:Create(main, ti, { Size = self._size }):Play()
 	end
 end
 
