@@ -3681,9 +3681,21 @@ Icons.BuilderFont = BUILDER_FONT
 
 local iconFont: Font? = nil
 
--- Call once at startup after uploading a Material Symbols/Icons font asset.
+-- Every label Icons.Apply has drawn on, so switching the icon font (or
+-- style) at runtime redraws icons that already exist. Strong keys with a
+-- Destroying cleanup rather than weak keys: Roblox may recreate an
+-- Instance's Lua wrapper, which would silently drop weak entries.
+local applied = {} -- label -> icon name
+local labelFonts = {} -- label -> the label's own font, for plain fallbacks
+local cleanups = {}
+
+local reapplyAll
+
+-- Sets the Material icon font (any style) and redraws every icon already
+-- on screen with it.
 function Icons.SetFont(font: Font)
 	iconFont = font
+	reapplyAll()
 end
 
 function Icons.HasFont(): boolean
@@ -3700,6 +3712,7 @@ local builderEnabled = true
 -- and the plain-character fallbacks.
 function Icons.SetBuilderIconsEnabled(enabled: boolean)
 	builderEnabled = enabled
+	reapplyAll()
 end
 
 -- Resolves `name` to the text to display and the font to display it in
@@ -3742,12 +3755,37 @@ function Icons.Register(name: string, codepoint: number)
 	CODEPOINTS[name] = codepoint
 end
 
--- Applies the icon glyph + matching font onto a Text object in one call.
-function Icons.Apply(textObject: TextLabel | TextButton, name: string)
+local function draw(textObject, name: string)
 	local text, font = Icons.Resolve(name)
 	textObject.Text = text
-	if font then
-		textObject.FontFace = font
+	textObject.FontFace = font or labelFonts[textObject] or textObject.FontFace
+end
+
+-- Applies the icon glyph + matching font onto a Text object in one call.
+-- The label keeps following later SetFont / style changes.
+function Icons.Apply(textObject: TextLabel | TextButton, name: string)
+	if applied[textObject] == nil then
+		labelFonts[textObject] = textObject.FontFace
+		local ok, connection = pcall(function()
+			return textObject.Destroying:Connect(function()
+				applied[textObject] = nil
+				labelFonts[textObject] = nil
+				cleanups[textObject] = nil
+			end)
+		end)
+		if ok then
+			cleanups[textObject] = connection
+		end
+	end
+	applied[textObject] = name
+	draw(textObject, name)
+end
+
+function reapplyAll()
+	for textObject, name in applied do
+		if textObject.Parent then
+			draw(textObject, name)
+		end
 	end
 end
 
@@ -4510,7 +4548,9 @@ loaders[newNode("IconFont", N_Executor)] = function(script, require)
 	when the executor lacks them.
 
 	local font = MD3.IconFont.Load()             -- Outlined; also calls MD3.Icons.SetFont(font)
-	local font = MD3.IconFont.Load("MD3", "Round")
+	local font = MD3.IconFont.Load("MD3", "Round") -- switch at any time; icons already
+	                                               -- on screen are redrawn
+	MD3.IconFont.CurrentStyle                    -- style actually loaded (after fallbacks)
 ]]
 local HttpService = game:GetService("HttpService")
 
@@ -4523,6 +4563,8 @@ local IconFont = {}
 local REPO_FONTS = "https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/assets/fonts/"
 
 IconFont.DefaultStyle = "Outlined"
+IconFont.StyleNames = { "Outlined", "Filled", "Round", "Sharp" }
+IconFont.CurrentStyle = nil :: string?
 IconFont.Styles = {
 	Filled = {
 		file = "MaterialIcons-Regular.ttf",
@@ -4584,6 +4626,7 @@ function IconFont.Load(folder: string?, style: string?): (Font?, string?)
 	folder = folder or "MD3"
 	style = style or IconFont.DefaultStyle
 	if loaded[style] then
+		IconFont.CurrentStyle = style
 		Icons.SetFont(loaded[style])
 		return loaded[style]
 	end
@@ -4607,6 +4650,7 @@ function IconFont.Load(folder: string?, style: string?): (Font?, string?)
 	end
 
 	loaded[style] = font
+	IconFont.CurrentStyle = style
 	Icons.SetFont(font)
 	return font
 end
@@ -7422,6 +7466,17 @@ function Window:Minimize(minimized: boolean?)
 	end
 end
 
+-- Switches the Material icon style ("Outlined" | "Filled" | "Round" |
+-- "Sharp") live; every icon already on screen is redrawn. Returns the style
+-- actually in use (a failed download falls back to Filled).
+function Window:SetIconStyle(style: string): (string?, string?)
+	local font, err = IconFont.Load("MD3", style)
+	if not font then
+		return nil, err
+	end
+	return IconFont.CurrentStyle
+end
+
 function Window:SetToggleKey(key)
 	self._toggleKey = toKeyCode(key)
 end
@@ -7586,6 +7641,29 @@ function Window:AddSettingsTab(props)
 			self.Theme:SetSeedColor(color)
 		end,
 	})
+
+	-- Icon style needs file functions + getcustomasset to load the fonts.
+	if Env.CanUseCustomAssets then
+		local iconStyle
+		iconStyle = appearance:AddDropdown({
+			Title = "Icon style",
+			Description = "Material Icons: Outlined is the M3 default",
+			Options = IconFont.StyleNames,
+			Default = IconFont.CurrentStyle or IconFont.DefaultStyle,
+			Flag = "MD3_IconStyle",
+			Callback = function(style)
+				if not style then
+					return
+				end
+				local current, err = self:SetIconStyle(style)
+				if current ~= style then
+					-- Show what's really loaded (e.g. after a fallback to Filled).
+					iconStyle:Set(current or IconFont.CurrentStyle, true)
+					self:Notify({ Title = "Icon style unavailable", Content = err or `Using {current} instead`, Icon = "error" })
+				end
+			end,
+		})
+	end
 
 	local interface = tab:AddSection("Interface")
 	interface:AddKeybind({

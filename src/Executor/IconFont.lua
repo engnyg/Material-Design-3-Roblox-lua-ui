@@ -15,7 +15,9 @@
 	when the executor lacks them.
 
 	local font = MD3.IconFont.Load()             -- Outlined; also calls MD3.Icons.SetFont(font)
-	local font = MD3.IconFont.Load("MD3", "Round")
+	local font = MD3.IconFont.Load("MD3", "Round") -- switch at any time; icons already
+	                                               -- on screen are redrawn
+	MD3.IconFont.CurrentStyle                    -- style actually loaded (after fallbacks)
 ]]
 local HttpService = game:GetService("HttpService")
 
@@ -28,6 +30,8 @@ local IconFont = {}
 local REPO_FONTS = "https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/assets/fonts/"
 
 IconFont.DefaultStyle = "Outlined"
+IconFont.StyleNames = { "Outlined", "Filled", "Round", "Sharp" }
+IconFont.CurrentStyle = nil :: string?
 IconFont.Styles = {
 	Filled = {
 		file = "MaterialIcons-Regular.ttf",
@@ -89,6 +93,7 @@ function IconFont.Load(folder: string?, style: string?): (Font?, string?)
 	folder = folder or "MD3"
 	style = style or IconFont.DefaultStyle
 	if loaded[style] then
+		IconFont.CurrentStyle = style
 		Icons.SetFont(loaded[style])
 		return loaded[style]
 	end
@@ -112,6 +117,7 @@ function IconFont.Load(folder: string?, style: string?): (Font?, string?)
 	end
 
 	loaded[style] = font
+	IconFont.CurrentStyle = style
 	Icons.SetFont(font)
 	return font
 end
