@@ -81,7 +81,7 @@ for _, name in {
 end
 
 local screen = Instance.new("ScreenGui")
-local click = { UserInputType = Enum.UserInputType.MouseButton1, Position = Vector2.new(10, 10) }
+local click = { UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.new(10, 10, 0) }
 
 local function poke(inst)
 	inst.MouseEnter:Fire()
@@ -551,17 +551,17 @@ wt:ClearOverrides()
 local grip = Window._grip
 local startSize = Window:GetSize()
 local mouse = Enum.UserInputType.MouseButton1
-grip.InputBegan:Fire({ UserInputType = mouse, Position = Vector2.new(100, 100) })
-uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(200, 150) })
-uis.InputEnded:Fire({ UserInputType = mouse, Position = Vector2.new(200, 150) })
+grip.InputBegan:Fire({ UserInputType = mouse, Position = Vector3.new(100, 100, 0) })
+uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector3.new(200, 150, 0) })
+uis.InputEnded:Fire({ UserInputType = mouse, Position = Vector3.new(200, 150, 0) })
 local resized = Window:GetSize()
 local scale = Window._uiScale.Scale
 check(resized.X.Offset == math.round(startSize.X.Offset + 100 / scale) and resized.Y.Offset == math.round(startSize.Y.Offset + 50 / scale), `resize handle size wrong: {resized.X.Offset}x{resized.Y.Offset}`)
 check(Window.Instance.Size == resized or (Window.Instance.Size.X.Offset == resized.X.Offset and Window.Instance.Size.Y.Offset == resized.Y.Offset), "window not resized")
 check(files["SmokeHub/window.json"] ~= nil, "resized size not saved")
-grip.InputBegan:Fire({ UserInputType = mouse, Position = Vector2.new(500, 500) })
-uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(-2000, -2000) })
-uis.InputEnded:Fire({ UserInputType = mouse, Position = Vector2.new(-2000, -2000) })
+grip.InputBegan:Fire({ UserInputType = mouse, Position = Vector3.new(500, 500, 0) })
+uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector3.new(-2000, -2000, 0) })
+uis.InputEnded:Fire({ UserInputType = mouse, Position = Vector3.new(-2000, -2000, 0) })
 check(Window:GetSize().X.Offset == 420 and Window:GetSize().Y.Offset == 280, "resize should stop at the minimum size")
 Window:SetSize(640, 400)
 local restoredWindow = MD3.CreateWindow({ Title = "Restore", Parent = host, ConfigFolder = "SmokeHub" })
@@ -652,7 +652,7 @@ check(#wm._blocks == 4 and custom.Instance.Parent == nil, "Block:Destroy did not
 
 local wmStart = wm.Instance.Position
 wm.Instance.InputBegan:Fire(click)
-uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(60, 40) })
+uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector3.new(60, 40, 0) })
 uis.InputEnded:Fire(click)
 check(wm.Instance.Position.X.Offset == wmStart.X.Offset + 50 and wm.Instance.Position.Y.Offset == wmStart.Y.Offset + 30, "watermark did not drag")
 
@@ -1064,7 +1064,19 @@ Assets.Forget(webmUrl)
 local staleOk, staleReason = vidWin:SetBackground(webmUrl)
 check(not staleOk and staleReason:find("WebM", 1, true) ~= nil and files[cachedPath] == nil, "a bad cached file should be refused and deleted")
 check(vidWin:SetBackground(webmUrl) and video.Visible, "after deleting the bad file the WebM should download again")
+
+-- Downloaded fine but Roblox can't play it (e.g. Delta Mobile): removed, with a notification
+local toastsBefore = toasts(vidWin)
+MOCK_ASSET_STATUS = Enum.AssetFetchStatus.Failure
+local refusedOk = vidWin:SetBackground(webmUrl)
+MOCK_ASSET_STATUS = nil
+check(refusedOk and not video.Visible and not video.Playing and vidWin:GetBackground() == nil, "a video Roblox can't play should be removed")
+check(toasts(vidWin) == toastsBefore + 1 and select(2, lastToast(vidWin)):find("couldn't play", 1, true) ~= nil, "a video Roblox can't play should notify why")
+
+-- Another script can reach the open window by its title
+check(MD3:GetWindow("Video Hub") == vidWin and MD3.GetWindow("Video Hub") == vidWin and MD3:GetWindow("Nope") == nil, "GetWindow by title")
 vidWin:Destroy()
+check(MD3:GetWindow("Video Hub") == nil, "GetWindow after unload")
 end
 
 -- Theme presets: NeverLose (a full preset: mode + pinned colors)

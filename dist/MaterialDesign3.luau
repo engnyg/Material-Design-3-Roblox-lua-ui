@@ -4096,13 +4096,15 @@ local Create = require(script.Parent.Parent.Util.Create)
 
 local Ripple = {}
 
-function Ripple.Emit(parent: GuiObject, inputPosition: Vector2, color: Color3)
+-- `inputPosition` is usually InputObject.Position, which is a Vector3 in
+-- Roblox; only its X / Y matter (Vector3 - Vector2 would throw).
+function Ripple.Emit(parent: GuiObject, inputPosition: Vector2 | Vector3, color: Color3)
 	local absPos, absSize = parent.AbsolutePosition, parent.AbsoluteSize
 	if absSize.X <= 0 or absSize.Y <= 0 then
 		return
 	end
 
-	local localPos = inputPosition - absPos
+	local localPos = Vector2.new(inputPosition.X, inputPosition.Y) - absPos
 	-- Diameter big enough to cover the furthest corner from the tap point.
 	local maxDist = math.max(
 		(localPos - Vector2.new(0, 0)).Magnitude,
@@ -9103,6 +9105,7 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 	-- or { Title, Subtitle, Icon, Duration } customizes it.
 	if not Window.IsLoaded then Window.Loaded:Wait() end -- if you need the window on screen first
 ]]
+local ContentProvider = game:GetService("ContentProvider")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -10095,10 +10098,39 @@ function Window:SetBackground(source: string?, transparency: number?, kind: stri
 		video.Video = if isVideo then content else ""
 		video.Visible = isVideo
 		video.Playing = isVideo and self.Instance.Visible
+		if isVideo then
+			self:_checkBackgroundVideo(source)
+		end
 	end
 	self:_layoutBackgroundBlur()
 	self:_syncBackgroundControls()
 	return true
+end
+
+-- A video can download fine and still be refused by Roblox (some executors'
+-- getcustomasset can't serve local videos, e.g. on mobile). Ask
+-- ContentProvider in the background; if it fails, drop the video and say why.
+function Window:_checkBackgroundVideo(source: string)
+	local video = self._backgroundVideo
+	task.spawn(function()
+		local failed = false
+		pcall(function()
+			ContentProvider:PreloadAsync({ video }, function(_, status)
+				if status == Enum.AssetFetchStatus.Failure then
+					failed = true
+				end
+			end)
+		end)
+		if not failed or self._destroyed or self._backgroundSource ~= source then
+			return
+		end
+		self:SetBackground(nil)
+		local reason = "Roblox couldn't play this WebM video here (this executor may not support local videos). Use a PNG / JPG image background instead."
+		warn(`[MD3] background: {reason}`)
+		if not self.Silent then
+			self:Notify({ Title = "Background unavailable", Content = reason, Icon = "error" })
+		end
+	end)
 end
 
 function Window:SetBackgroundTransparency(transparency: number)
@@ -10821,6 +10853,15 @@ MD3.Window = require(script.Window.Window)
 function MD3.CreateWindow(selfOrProps, maybeProps)
 	local props = if selfOrProps == MD3 then maybeProps else selfOrProps
 	return MD3.Window.new(props)
+end
+
+-- The open window with this Title (or Id), also from another script:
+--   local Window = MD3:GetWindow("My Hub")
+-- (windows are registered in getgenv(), which every script shares). nil if none.
+function MD3.GetWindow(selfOrKey, maybeKey)
+	local key = if selfOrKey == MD3 then maybeKey else selfOrKey
+	local windows = MD3.Env.Registry().Windows
+	return windows and windows[key] or nil
 end
 
 -- Shorthand for MD3.Theme.new(seed, mode)

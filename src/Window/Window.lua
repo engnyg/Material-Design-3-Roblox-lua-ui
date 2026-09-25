@@ -42,6 +42,7 @@
 	-- or { Title, Subtitle, Icon, Duration } customizes it.
 	if not Window.IsLoaded then Window.Loaded:Wait() end -- if you need the window on screen first
 ]]
+local ContentProvider = game:GetService("ContentProvider")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -1034,10 +1035,39 @@ function Window:SetBackground(source: string?, transparency: number?, kind: stri
 		video.Video = if isVideo then content else ""
 		video.Visible = isVideo
 		video.Playing = isVideo and self.Instance.Visible
+		if isVideo then
+			self:_checkBackgroundVideo(source)
+		end
 	end
 	self:_layoutBackgroundBlur()
 	self:_syncBackgroundControls()
 	return true
+end
+
+-- A video can download fine and still be refused by Roblox (some executors'
+-- getcustomasset can't serve local videos, e.g. on mobile). Ask
+-- ContentProvider in the background; if it fails, drop the video and say why.
+function Window:_checkBackgroundVideo(source: string)
+	local video = self._backgroundVideo
+	task.spawn(function()
+		local failed = false
+		pcall(function()
+			ContentProvider:PreloadAsync({ video }, function(_, status)
+				if status == Enum.AssetFetchStatus.Failure then
+					failed = true
+				end
+			end)
+		end)
+		if not failed or self._destroyed or self._backgroundSource ~= source then
+			return
+		end
+		self:SetBackground(nil)
+		local reason = "Roblox couldn't play this WebM video here (this executor may not support local videos). Use a PNG / JPG image background instead."
+		warn(`[MD3] background: {reason}`)
+		if not self.Silent then
+			self:Notify({ Title = "Background unavailable", Content = reason, Icon = "error" })
+		end
+	end)
 end
 
 function Window:SetBackgroundTransparency(transparency: number)

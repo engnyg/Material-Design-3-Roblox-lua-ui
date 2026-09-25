@@ -5,13 +5,15 @@ local Create = require(script.Parent.Parent.Util.Create)
 
 local Ripple = {}
 
-function Ripple.Emit(parent: GuiObject, inputPosition: Vector2, color: Color3)
+-- `inputPosition` is usually InputObject.Position, which is a Vector3 in
+-- Roblox; only its X / Y matter (Vector3 - Vector2 would throw).
+function Ripple.Emit(parent: GuiObject, inputPosition: Vector2 | Vector3, color: Color3)
 	local absPos, absSize = parent.AbsolutePosition, parent.AbsoluteSize
 	if absSize.X <= 0 or absSize.Y <= 0 then
 		return
 	end
 
-	local localPos = inputPosition - absPos
+	local localPos = Vector2.new(inputPosition.X, inputPosition.Y) - absPos
 	-- Diameter big enough to cover the furthest corner from the tap point.
 	local maxDist = math.max(
 		(localPos - Vector2.new(0, 0)).Magnitude,

@@ -91,6 +91,16 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
+**從另一個腳本控制已經開著的視窗**：`Window` 只是主腳本裡的變數，另一個腳本拿不到（會出現 `attempt to index nil with 'SetBackground'`）。用標題取回它：
+
+```lua
+local MD3 = loadstring(game:HttpGet("https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/dist/MaterialDesign3.luau"))()
+local Window = MD3:GetWindow("My Hub")   -- CreateWindow 的 Title（或 Id）；沒開著就是 nil
+if Window then
+    Window:SetBackground("https://.../bg.png")
+end
+```
+
 `Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SetBackground`／`SetBackgroundTransparency`／`GetBackground`、`SkipLoading`、`SetLoadingScreenEnabled`／`GetLoadingScreenEnabled`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
 
 ### HUD（浮水印、快捷鍵列表、狀態指示）
@@ -181,7 +191,7 @@ Window:SetBackground(nil)                        -- 移除
 local source, transparency, kind = Window:GetBackground() -- kind："Image" | "Video"
 ```
 
-- **影片背景**：`.webm` 網址或檔案會自動當影片播放（循環、靜音），視窗隱藏時暫停、打開時繼續；透明度、設定頁、設定檔跟圖片共用。Roblox 上傳的影片素材 ID 看不出是影片，要指定：`Window:SetBackground("rbxassetid://123", nil, "Video")`（`CreateWindow` 用 `BackgroundKind = "Video"`）。影片能不能播要看 executor 支不支援用 `getcustomasset` 載入 `.webm`。
+- **影片背景**：`.webm` 網址或檔案會自動當影片播放（循環、靜音），視窗隱藏時暫停、打開時繼續；透明度、設定頁、設定檔跟圖片共用。Roblox 上傳的影片素材 ID 看不出是影片，要指定：`Window:SetBackground("rbxassetid://123", nil, "Video")`（`CreateWindow` 用 `BackgroundKind = "Video"`）。影片能不能播要看 executor 支不支援用 `getcustomasset` 載入 `.webm`：檔案下載成功但 Roblox 播不了時（例如 Delta Mobile 會在主控台印出 `Failed to load rbxasset://…webm`），會自動拿掉影片背景並跳通知，這時請改用 PNG／JPG 圖片背景。
 - **模糊**：`BackgroundBlur`／`SetBackgroundBlur(px)`／設定頁的「Image blur」滑桿（0–24 px，存進設定檔 `MD3_BackgroundBlur`）。Roblox 的 UI 沒有內建模糊（`BlurEffect` 只模糊 3D 畫面），所以這裡是把圖片畫成 13 份、往四周錯開後平均疊起來做出柔和的模糊；0 的時候只有原本那一張圖，不增加負擔。只作用在圖片，**影片背景不會模糊**（每一份都要各自解碼影片，太吃效能）。
 - **GIF 不支援**：Roblox 不能播、也不能顯示 GIF。想要動態背景，把 GIF 轉成 WebM（例如 `ffmpeg -i bg.gif -c:v libvpx-vp9 -b:v 0 -crf 32 -an bg.webm`，或線上轉檔工具）；靜態背景用 PNG／JPG。WebP 也不支援。
 - **格式會檢查**：下載的檔案會看檔頭判斷是 PNG／JPG／WebM；GIF、WebP、網頁（例如 GitHub 的 404 頁面）會被擋下並說明原因。之前版本已經存進 workspace 的 GIF 也會被找出來刪掉。
