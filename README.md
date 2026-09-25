@@ -15,7 +15,9 @@ local Window = MD3:CreateWindow({
     Icon = "widgets",                    -- Material 圖標名稱，或圖片（網址／rbxassetid）
     Logo = "https://raw.githubusercontent.com/<你>/<repo>/main/logo.png", -- 彩色 Logo 圖片（不套色，可省略）
     Mode = "Dark",                       -- "Light" | "Dark"
-    Seed = Color3.fromHex("#6750A4"),    -- 主題種子色，整套配色由它生成
+    ThemeColor = Color3.fromHex("#6750A4"), -- 主題色，整套配色由它生成
+    IconColor = nil,                     -- 所有圖標的顏色（Color3，可省略）
+    TextColor = nil,                     -- 所有文字的顏色（Color3，可省略；說明文字會自動用淡一點的同色）
     ToggleKey = Enum.KeyCode.RightShift, -- 顯示／隱藏視窗
     ConfigFolder = "MyHub",              -- 設定檔存放資料夾（executor workspace）
     IconStyle = "Outlined",              -- 圖標樣式："Outlined"（預設）| "Filled" | "Round" | "Sharp"
@@ -53,7 +55,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 - **真正的 Material 圖標**：跟 NeverLose 載入圖片的方式一樣（`HttpGet` → `writefile` → `getcustomasset`），把 Google 官方 Material Icons 預先畫成的圖片（sprite sheet，每種樣式一張 PNG）下載並載入，不需要上傳任何資產。預設是 M3 風格的**線條版（Outlined）**，可用 `IconStyle` 或設定頁換成 `Filled`（實心）、`Round`（圓角）或 `Sharp`（直角）；載入失敗或 executor 不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字或中文字。
 - **外部圖片**：所有 `Icon` / `Logo` / 通知的 `Image` 都可以直接填網址，會自動下載並透過 `getcustomasset` 載入（見下方「載入外部圖片」）。
 - **設定檔**：`Window:SaveConfig(name)` / `LoadConfig(name)` / `ListConfigs()` / `DeleteConfig(name)` / `SetAutoLoad(name)`，存成 JSON（Color3、KeyCode 會自動序列化）。
-- **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetSeedColor(color)`，整個視窗立即重新上色。
+- **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetThemeColor(color)`、`Window.Theme:SetIconColor(color)`、`Window.Theme:SetTextColor(color)`，整個視窗立即重新上色。設定頁的 Appearance 區塊也有 **Theme color／Icon color／Text color** 三個選色器可以直接調（「Reset icon & text colors」還原）。
 - **主題編輯器**：設定頁內建，可以單獨改每個顏色（含圖標顏色），見下方「主題編輯器」。
 - **Callback 錯誤不會弄壞 UI**：所有 Callback 都在 `xpcall` 中執行，錯誤只會 `warn` 出來。
 - `Window.OnUnload:Connect(fn)`：UI 被卸載時停止你的迴圈／連線。
@@ -98,6 +100,18 @@ MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭
 
 `Assets.Resolve` 接受：網址（`http(s)://`）、`rbxassetid://…`／`rbxasset://…`／`rbxthumb://…`、純數字 ID（`123456` → `rbxassetid://123456`）、或 workspace 內已有的檔案路徑（`"MyHub/icon.png"`）。下載失敗（例如拿到 GitHub 的 404 HTML 頁）或 executor 不支援 `getcustomasset` 時回傳 `""`（不顯示圖片），不會丟錯。GitHub 圖片請用 `raw.githubusercontent.com/...` 或 `github.com/.../blob/main/xxx.png?raw=true` 這種直接下載的網址。
 
+### 主題色、圖標、文字顏色
+
+最常調的三個顏色各有一個控制，設定頁 Appearance 區塊可以直接選色，程式裡也能設定：
+
+| 設定頁 | 程式 | 會改到 |
+| --- | --- | --- |
+| Theme color | `CreateWindow{ ThemeColor = c }`／`Theme:SetThemeColor(c)` | 整套配色（按鈕、開關、選取底色、標題…都由它生成） |
+| Icon color | `CreateWindow{ IconColor = c }`／`Theme:SetIconColor(c)` | 所有圖標（一般、標題列、通知、選中分頁） |
+| Text color | `CreateWindow{ TextColor = c }`／`Theme:SetTextColor(c)` | 所有文字；說明／副標題等次要文字自動用同色較淡的版本，沒另外設定時圖標也跟著文字色 |
+
+`SetIconColor(nil)`／`SetTextColor(nil)` 還原成自動生成的顏色。要更細（例如只改選中分頁的圖標、只改說明文字）請用下面的主題編輯器。
+
 ### 主題編輯器
 
 `Window:AddSettingsTab()` 的設定頁裡有「Theme editor」區塊（也可以用 `Window:AddThemeEditor(tab)` 放進你自己的分頁；不給參數會另開一個「Theme」分頁）：
@@ -127,7 +141,7 @@ theme:Import(data)
 Window:AddTab({ Title = "Combat", Icon = "bolt", IconColor = Color3.fromRGB(255, 200, 0) })
 Main:AddButton({ Title = "Delete", Icon = "delete", IconColor = "Error" })
 Window:Notify({ Title = "Saved", Icon = "save", IconColor = "Tertiary" })
-MD3:CreateWindow({ Title = "My Hub", Icon = "widgets", IconColor = "Tertiary" }) -- 標題列圖標
+MD3:CreateWindow({ Title = "My Hub", Icon = "widgets", AppIconColor = "Tertiary" }) -- 只改標題列圖標
 tab:SetIconColor(nil) -- 分頁圖標改回跟著主題
 ```
 

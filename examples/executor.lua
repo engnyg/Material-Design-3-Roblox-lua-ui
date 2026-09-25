@@ -16,7 +16,9 @@ local Window = MD3:CreateWindow({
 	Icon = "widgets",
 	-- Logo = "https://.../logo.png",   -- a colored image shown as-is instead of Icon
 	Mode = "Dark",
-	Seed = Color3.fromHex("#6750A4"),
+	ThemeColor = Color3.fromHex("#6750A4"), -- also adjustable live: Settings > Appearance
+	-- IconColor = Color3.fromRGB(255, 200, 0), -- every icon
+	-- TextColor = Color3.fromRGB(230, 230, 255), -- all text
 	ToggleKey = Enum.KeyCode.RightShift,
 	ConfigFolder = "MD3Hub",
 })
