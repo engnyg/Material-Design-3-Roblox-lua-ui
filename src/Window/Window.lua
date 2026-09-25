@@ -11,7 +11,7 @@
 		Seed = Color3.fromHex("#6750A4"),  -- accent / seed color
 		ToggleKey = Enum.KeyCode.RightShift,
 		ConfigFolder = "MyHub",            -- where configs are saved (executor workspace)
-		IconFont = true,                   -- download + load the Material Icons font
+		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
 		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
 	})
@@ -37,7 +37,7 @@ local StateLayer = require(Root.Core.StateLayer)
 local Icons = require(Root.Core.Icons)
 local Dialog = require(Root.Components.Dialog)
 local Env = require(Root.Executor.Env)
-local IconFont = require(Root.Executor.IconFont)
+local IconImages = require(Root.Executor.IconImages)
 local Themer = require(script.Parent.Themer)
 local Config = require(script.Parent.Config)
 local Notifier = require(script.Parent.Notifier)
@@ -143,10 +143,18 @@ function Window.new(props)
 
 	self._configFolder = props.ConfigFolder or props.Folder or `MD3/{sanitize(self.Title)}`
 
-	-- An explicit IconStyle always (re)loads; otherwise keep whatever font a
-	-- previous window or the script already set up.
-	if props.IconFont ~= false and (props.IconStyle ~= nil or not Icons.HasFont()) then
-		pcall(IconFont.Load, "MD3", props.IconStyle)
+	-- Material icons as a sprite-sheet image, loaded the way NeverLose loads
+	-- its images (HttpGet -> writefile -> getcustomasset). Runs in the
+	-- background so the window appears immediately; icons start out as
+	-- BuilderIcons / symbols and switch over in place once it's ready. An
+	-- explicit IconStyle always (re)loads; otherwise keep what's loaded.
+	if props.Icons ~= false and props.IconFont ~= false and (props.IconStyle ~= nil or not Icons.GetSheet()) then
+		task.spawn(function()
+			local ok, err = IconImages.Load(props.IconStyle)
+			if not ok and Env.CanUseCustomAssets then
+				warn(`[MD3] could not load the icon images: {err}`)
+			end
+		end)
 	end
 
 	self.Theme = props.Theme or Theme.new(props.Seed or props.Accent, props.Mode or "Dark")
@@ -218,9 +226,10 @@ function Window.new(props)
 		local appIcon = Base.Glyph(themer, appIconSource, 24, "Primary", topBar, props.Logo == nil)
 		appIcon.AnchorPoint = Vector2.new(0, 0.5)
 		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
-		hasAppIcon = appIcon.Visible
-		if not hasAppIcon then
+		-- A glyph may still be waiting for the icon images; a failed image won't come back.
+		if appIcon:IsA("ImageLabel") and not appIcon.Visible then
 			appIcon:Destroy()
+			hasAppIcon = false
 		end
 	end
 
@@ -552,13 +561,13 @@ end
 
 -- Switches the Material icon style ("Outlined" | "Filled" | "Round" |
 -- "Sharp") live; every icon already on screen is redrawn. Returns the style
--- actually in use (a failed download falls back to Filled).
+-- actually shown afterwards (unchanged if loading failed) and the error.
 function Window:SetIconStyle(style: string): (string?, string?)
-	local font, err = IconFont.Load("MD3", style)
-	if not font then
-		return nil, err
+	local ok, err = IconImages.Load(style)
+	if not ok then
+		return IconImages.CurrentStyle, err
 	end
-	return IconFont.CurrentStyle
+	return IconImages.CurrentStyle
 end
 
 function Window:SetToggleKey(key)
@@ -726,14 +735,14 @@ function Window:AddSettingsTab(props)
 		end,
 	})
 
-	-- Icon style needs file functions + getcustomasset to load the fonts.
+	-- Icon style needs file functions + getcustomasset to load the images.
 	if Env.CanUseCustomAssets then
 		local iconStyle
 		iconStyle = appearance:AddDropdown({
 			Title = "Icon style",
 			Description = "Material Icons: Outlined is the M3 default",
-			Options = IconFont.StyleNames,
-			Default = IconFont.CurrentStyle or IconFont.DefaultStyle,
+			Options = IconImages.StyleNames,
+			Default = IconImages.CurrentStyle or IconImages.DefaultStyle,
 			Flag = "MD3_IconStyle",
 			Callback = function(style)
 				if not style then
@@ -741,9 +750,9 @@ function Window:AddSettingsTab(props)
 				end
 				local current, err = self:SetIconStyle(style)
 				if current ~= style then
-					-- Show what's really loaded (e.g. after a fallback to Filled).
-					iconStyle:Set(current or IconFont.CurrentStyle, true)
-					self:Notify({ Title = "Icon style unavailable", Content = err or `Using {current} instead`, Icon = "error" })
+					-- Show what's really on screen (the previous style, if any).
+					iconStyle:Set(current, true)
+					self:Notify({ Title = "Icon style unavailable", Content = err or "", Icon = "error" })
 				end
 			end,
 		})

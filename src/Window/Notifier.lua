@@ -92,7 +92,9 @@ function Notifier:Notify(props)
 	if hasIcon then
 		local icon = Base.Glyph(themer, iconName, 20, "Primary", card, props.Image == nil)
 		icon.ZIndex = 51
-		hasIcon = icon.Visible
+		if icon:IsA("ImageLabel") and not icon.Visible then
+			hasIcon = false
+		end
 	end
 
 	local textColumn = Create("Frame") {

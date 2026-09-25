@@ -215,6 +215,38 @@ MD3.IconFont.Load("MD3", "Outlined")
 MD3.Icons.SetBuilderIconsEnabled(true)
 check(existing.FontFace == font, "existing icon did not return to the Material font")
 
+-- Without any icon source, Material names draw nothing rather than a bare
+-- Private Use Area character (which Windows renders as e.g. Chinese text)
+MD3.Icons.SetFont(nil)
+MD3.Icons.SetBuilderIconsEnabled(false)
+check(MD3.Icons.Glyph("settings") == "" and not MD3.Icons.CanRender("settings"), "bare PUA codepoint emitted without a font")
+MD3.Icons.SetBuilderIconsEnabled(true)
+MD3.IconFont.Load("MD3", "Outlined")
+
+-- Icon images (sprite sheets) loaded NeverLose-style, taking priority over the font
+local IconImages = MD3.IconImages
+local sheetLabel = Instance.new("TextLabel")
+sheetLabel.TextSize = 20
+sheetLabel.Parent = screen
+MD3.Icons.Apply(sheetLabel, "home", true)
+check(IconImages.Load("Filled") == true and IconImages.CurrentStyle == "Filled", "IconImages.Load failed")
+check(files["MD3/assets/MaterialIconsFilled.png"] ~= nil, "icon sheet not saved to the workspace")
+local sheetSprite = sheetLabel:FindFirstChild("MD3Icon")
+check(sheetSprite and sheetSprite.Visible and sheetLabel.Text == "", "existing icon did not switch to the sprite sheet")
+check(sheetSprite.Image == "rbxasset://custom/MD3/assets/MaterialIconsFilled.png", `sprite image wrong: {sheetSprite.Image}`)
+local homeIndex = MD3.IconSheet.Index.home
+check(sheetSprite.ImageRectOffset.X == (homeIndex % 12) * 72 + 4 and sheetSprite.ImageRectOffset.Y == math.floor(homeIndex / 12) * 72 + 4, "sprite cell offset wrong")
+sheetLabel.TextColor3 = Color3.new(1, 0, 0)
+check(sheetSprite.ImageColor3 == Color3.new(1, 0, 0), "sprite did not follow the label color")
+check(IconImages.Load("Sharp") == false and IconImages.CurrentStyle == "Filled", "a broken sheet download should keep the previous style")
+check(files["MD3/assets/MaterialIconsSharp.png"] == nil, "a non-PNG download was left on disk")
+MOCK_ASSET_STATUS = Enum.AssetFetchStatus.Failure
+check(IconImages.Load("Round") == false and IconImages.CurrentStyle == "Filled", "an image Roblox can't load should be rejected")
+MOCK_ASSET_STATUS = nil
+check(select(2, IconImages.Load("Nope")) ~= nil, "unknown sheet style should report an error")
+IconImages.Unload()
+check(not sheetSprite.Visible and sheetLabel.Text ~= "", "Unload did not return to glyphs")
+
 -- External images: HttpGet -> writefile -> getcustomasset (cached)
 local Assets = MD3.Assets
 local logoUrl = "https://raw.githubusercontent.com/someone/repo/main/assets/logo.png?raw=true"
@@ -249,6 +281,7 @@ local Window = MD3:CreateWindow({
 	ConfigFolder = "SmokeHub",
 })
 check(Window.Gui.Parent == host, "Window did not parent its ScreenGui")
+check(IconImages.CurrentStyle == "Outlined", "Window should load the Outlined icon images")
 check(Window.Theme.Mode == "Dark", "Window should default to dark mode")
 
 local main = Window:AddTab({ Title = "Main", Icon = "home" })
@@ -327,11 +360,12 @@ local settings = Window:AddSettingsTab()
 check(Window.Flags.MD3_DarkMode and Window.Flags.MD3_ToggleKey, "settings tab flags missing")
 local styleDropdown = Window.Flags.MD3_IconStyle
 check(styleDropdown and styleDropdown.Value == "Outlined", "settings tab icon style dropdown missing")
-local navIcon = main._icon
+local navSprite = main._icon:FindFirstChild("MD3Icon")
+check(navSprite and navSprite.Image:find("MaterialIconsOutlined") ~= nil, "tab icon not drawn from the Outlined sheet")
 styleDropdown:Set("Round")
-check(MD3.IconFont.CurrentStyle == "Round" and navIcon.FontFace == round, "settings dropdown did not switch the icon style live")
+check(IconImages.CurrentStyle == "Round" and navSprite.Image:find("MaterialIconsRound") ~= nil, "settings dropdown did not switch the icon style live")
 styleDropdown:Set("Sharp")
-check(MD3.IconFont.CurrentStyle == "Filled" and styleDropdown.Value == "Filled", "failed style switch should show the fallback")
+check(IconImages.CurrentStyle == "Round" and styleDropdown.Value == "Round", "failed style switch should keep showing the previous style")
 styleDropdown:Set("Outlined")
 check(Window:SaveConfig("main"), "SaveConfig failed")
 check(table.find(Window:ListConfigs(), "main"), "ListConfigs missing saved config")

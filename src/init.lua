@@ -35,6 +35,7 @@ MD3.Elevation = require(script.Core.Elevation)
 MD3.StateLayer = require(script.Core.StateLayer)
 MD3.Ripple = require(script.Core.Ripple)
 MD3.Icons = require(script.Core.Icons)
+MD3.IconSheet = require(script.Core.IconSheet)
 
 -- Utilities (exposed in case consumers want to build custom components the same way)
 MD3.Color = require(script.Util.Color)
@@ -64,6 +65,7 @@ MD3.Divider = require(script.Components.Divider)
 MD3.Env = require(script.Executor.Env)
 MD3.IconFont = require(script.Executor.IconFont)
 MD3.Assets = require(script.Executor.Assets)
+MD3.IconImages = require(script.Executor.IconImages)
 MD3.Window = require(script.Window.Window)
 
 -- Creates an executor-style window. Works as MD3:CreateWindow{...} or

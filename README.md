@@ -50,7 +50,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 - **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
 - **防偵測／相容性**：ScreenGui 優先放進 `gethui()`，其次 `CoreGui`，最後才是 `PlayerGui`；有 `syn.protect_gui` / `protectgui` 會自動套用；ScreenGui 名稱隨機。
 - **重複執行不會疊視窗**：同一個 `Title`（或 `Id`）的視窗再次建立時，舊的會先被卸載（透過 `getgenv()` 記錄）。
-- **真正的 Material 圖標**：支援 `writefile` + `getcustomasset` 的 executor 會自動下載 Google 官方 Material Icons 字型（Apache-2.0）並載入，不需要上傳任何資產。預設是 M3 風格的**線條版（Outlined）**，可用 `IconStyle` 換成 `Filled`（實心）、`Round`（圓角）或 `Sharp`（直角）；不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字。
+- **真正的 Material 圖標**：跟 NeverLose 載入圖片的方式一樣（`HttpGet` → `writefile` → `getcustomasset`），把 Google 官方 Material Icons 預先畫成的圖片（sprite sheet，每種樣式一張 PNG）下載並載入，不需要上傳任何資產。預設是 M3 風格的**線條版（Outlined）**，可用 `IconStyle` 或設定頁換成 `Filled`（實心）、`Round`（圓角）或 `Sharp`（直角）；載入失敗或 executor 不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字或中文字。
 - **外部圖片**：所有 `Icon` / `Logo` / 通知的 `Image` 都可以直接填網址，會自動下載並透過 `getcustomasset` 載入（見下方「載入外部圖片」）。
 - **設定檔**：`Window:SaveConfig(name)` / `LoadConfig(name)` / `ListConfigs()` / `DeleteConfig(name)` / `SetAutoLoad(name)`，存成 JSON（Color3、KeyCode 會自動序列化）。
 - **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetSeedColor(color)`，整個視窗立即重新上色。
@@ -198,7 +198,8 @@ end)
 
 - `Executor/Env.lua`：executor 全域函式的相容層（見上方「Executor 環境工具」）。
 - `Executor/Assets.lua`：外部圖片載入（見上方「載入外部圖片」）；所有元件的 `Icon` 參數都透過它解析。
-- `Executor/IconFont.lua`：`MD3.IconFont.Load(folder?, style?)` 下載該樣式的字型（預設 `Outlined`）→ 寫進 workspace → 產生 Roblox font family JSON → 用 `getcustomasset` 載入，並自動呼叫 `Icons.SetFont`。`CreateWindow` 預設會做這件事（`IconFont = false` 可關閉）。
+- `Executor/IconImages.lua`：`MD3.IconImages.Load(style?)` 下載該樣式的圖標 sprite sheet（預設 `Outlined`），`CreateWindow` 預設會在背景做這件事（`Icons = false` 可關閉）。
+- `Executor/IconFont.lua`（選用）：`MD3.IconFont.Load(folder?, style?)` 下載該樣式的字型 → 寫進 workspace → 產生 Roblox font family JSON → 用 `getcustomasset` 載入，並自動呼叫 `Icons.SetFont`。
 - `Window/Window.lua`、`Window/Tab.lua`：視窗、分頁與 Section。
 - `Window/Elements/*`：各個視窗元件；列表項目版面（標題／說明／右側控制項）共用 `Elements/Base.lua`。
 - `Window/Themer.lua`：把一般 Instance 屬性綁到主題色角色，換主題時自動重新上色。
@@ -206,20 +207,26 @@ end)
 
 ## 圖標（不用 emoji）
 
-**在 executor 上不用做任何事**：`CreateWindow` 會自動用 `MD3.IconFont.Load()` 下載並載入官方字型（需要 executor 支援 `writefile` 與 `getcustomasset`）。
+**在 executor 上不用做任何事**：`CreateWindow` 會在背景用 `MD3.IconImages.Load()` 載入圖標圖片（需要 executor 支援 `writefile` 與 `getcustomasset`）。視窗會先立刻出現（圖標暫時是 BuilderIcons／簡單符號），圖片一載入完就原地換成 Material 圖標。
 
-| `IconStyle` | 樣式 | 字型來源 |
+做法跟 [NeverLose](https://github.com/engnyg/NeverLose) 載入圖片一樣：`HttpGet` 下載 PNG → `writefile` 存進 `MD3/assets/` → `getcustomasset` 轉成圖片 ID → 用 `ContentProvider:PreloadAsync` 確認 Roblox 真的載入成功。每個圖標是從同一張 sprite sheet 用 `ImageRectOffset` 切出來，顏色跟著標籤的文字顏色（主題色）走。
+
+| `IconStyle` | 樣式 | 圖片 |
 | --- | --- | --- |
-| `"Outlined"`（預設） | 線條版，M3 預設外觀 | 本 repo 的 [`assets/fonts/`](assets/fonts)（~420 KB） |
-| `"Filled"` | 實心版（舊版 Material 預設） | Google 官方 repo 的 `MaterialIcons-Regular.ttf`（~350 KB） |
-| `"Round"` | 圓角 | 本 repo 的 `assets/fonts/`（~500 KB） |
-| `"Sharp"` | 直角 | 本 repo 的 `assets/fonts/`（~350 KB） |
+| `"Outlined"`（預設） | 線條版，M3 預設外觀 | [`assets/icons/MaterialIconsOutlined.png`](assets/icons/MaterialIconsOutlined.png)（~86 KB） |
+| `"Filled"` | 實心版 | `assets/icons/MaterialIconsFilled.png`（~74 KB） |
+| `"Round"` | 圓角 | `assets/icons/MaterialIconsRound.png`（~81 KB） |
+| `"Sharp"` | 直角 | `assets/icons/MaterialIconsSharp.png`（~71 KB） |
 
-Google 只提供 Outlined／Round／Sharp 的 `.otf`（CFF 輪廓）版本，為了確保 Roblox 能穩定載入，`assets/fonts/` 裡放的是用 [`tools/convert_icon_fonts.py`](tools/convert_icon_fonts.py) 轉成 TrueType 的同一套字型（字形、字碼、字距不變，驗證過渲染結果與原檔逐像素相同）。如果選的樣式下載失敗，會自動退回 `Filled`。
+圖片由 [`tools/build_icon_sheets.py`](tools/build_icon_sheets.py) 從官方字型畫出（864×864，12 欄、每格 64 px + 4 px 間隔），對照表在 `src/Core/IconSheet.lua`。載入失敗時（下載到的不是 PNG、或 Roblox 載不進來）會保留原本顯示的樣式，不會壞掉。
+
+> 為什麼不用字型：用 `getcustomasset` 產生的字型檔在部分 executor 上載不起來，而 Material 圖標在字型裡是 Unicode 私用區（PUA）字元——字型沒載入時，繁體中文 Windows 會用系統字型把它們畫成中文字。圖片沒有這個問題。現在沒有任何圖標來源時也不會再輸出 PUA 字元。
+>
+> 字型版本仍然保留：`MD3.IconFont.Load("MD3", "Outlined")`（Google 只提供 Outlined／Round／Sharp 的 `.otf`，`assets/fonts/` 是用 [`tools/convert_icon_fonts.py`](tools/convert_icon_fonts.py) 轉成的 TrueType 版）。同時載入時圖片優先。
 
 **執行中也能切換**，畫面上已經有的圖標會立刻重畫，不用重建 UI：
 - 內建設定頁（`Window:AddSettingsTab()`）的「Appearance → Icon style」下拉選單，選擇會存進設定檔（Flag `MD3_IconStyle`）。
-- 程式裡：`Window:SetIconStyle("Round")`（回傳實際使用的樣式）或 `MD3.IconFont.Load("MD3", "Round")`；`MD3.IconFont.CurrentStyle` 是目前載入的樣式。
+- 程式裡：`Window:SetIconStyle("Round")`（回傳實際顯示的樣式）或 `MD3.IconImages.Load("Round")`；`MD3.IconImages.CurrentStyle` 是目前顯示的樣式。
 
 **沒有 Material 字型時**（executor 不支援 `getcustomasset`、或在 Studio 還沒設定字型），圖標會改用 Roblox 客戶端本身就有的 **BuilderIcons** 字型（`rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json`，Roblox App 介面用的那套）。它是連字（ligature）字型——文字 `gear` 會畫成齒輪——`Icons.lua` 內建了 Material 名稱到 BuilderIcons 名稱的對照表（`settings` → `gear`、`close` → `x`…）。也可以直接用任何 BuilderIcons 圖標：`Icon = "builder:sword"`。不想用可以呼叫 `MD3.Icons.SetBuilderIconsEnabled(false)`。優先順序：Material 字型 → BuilderIcons → 簡單符號。
 

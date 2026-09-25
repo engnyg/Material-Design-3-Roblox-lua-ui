@@ -348,6 +348,17 @@ services.HttpService = {
 	end,
 }
 
+-- Asset loading always "succeeds" unless a test sets MOCK_ASSET_STATUS.
+services.ContentProvider = {
+	PreloadAsync = function(_, list, callback)
+		for _, item in list do
+			if callback then
+				callback(item, MOCK_ASSET_STATUS or Enum.AssetFetchStatus.Success)
+			end
+		end
+	end,
+}
+
 local localPlayer = Instance.new("Player")
 local playerGui = Instance.new("PlayerGui")
 playerGui.Name = "PlayerGui"
