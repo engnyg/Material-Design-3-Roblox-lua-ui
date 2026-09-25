@@ -8814,6 +8814,7 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
 		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
+		Silent = false,                    -- true: no loading screen, start hidden, autoload without a notification
 	})
 
 	local Main = Window:AddTab({ Title = "Main", Icon = "home" })
@@ -9301,10 +9302,19 @@ function Window.new(props)
 		self._maid:GiveTask(camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale))
 	end
 
+	--== Silent start ==--
+	-- Nothing pops up: no loading screen, the window starts hidden (toggle
+	-- key / mobile button opens it) and autoload doesn't notify.
+	self.Silent = props.Silent == true
+	if self.Silent then
+		self.Visible = false
+		main.Visible = false
+	end
+
 	--== Loading screen ==--
-	-- On unless the script passes LoadingScreen = false; the player can also
-	-- turn it off from the settings tab (saved in ConfigFolder/loading.txt).
-	self._loadingAllowed = props.LoadingScreen ~= false
+	-- On unless the script passes LoadingScreen = false (or Silent); the
+	-- player can also turn it off from the settings tab (ConfigFolder/loading.txt).
+	self._loadingAllowed = props.LoadingScreen ~= false and not self.Silent
 	if self._loadingAllowed and self:GetLoadingScreenEnabled() then
 		self._loading = true
 		main.Visible = false
@@ -9723,7 +9733,9 @@ function Window:LoadAutoloadConfig(): boolean
 	end
 	local ok, err = self:LoadConfig(name)
 	if ok then
-		self:Notify({ Title = "Config loaded", Content = `Auto-loaded "{name}"`, Icon = "folder" })
+		if not self.Silent then
+			self:Notify({ Title = "Config loaded", Content = `Auto-loaded "{name}"`, Icon = "folder" })
+		end
 	else
 		warn(`[MD3] autoload failed: {err}`)
 	end

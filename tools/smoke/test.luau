@@ -837,6 +837,33 @@ scriptOff:AddSettingsTab()
 check(findElement(scriptOff, "Loading animation") == nil, "no loading switch when the script turned it off")
 scriptOff:Destroy()
 
+-- Silent start: no loading screen, starts hidden, autoload without a toast
+local silent = MD3.CreateWindow({ Title = "Silent Hub", Parent = host, ConfigFolder = "SilentHub", ToggleKey = "F8", Silent = true, LoadingScreen = true })
+check(silent.Silent and silent._loadingScreen == nil and silent.IsLoaded, "Silent should skip the loading screen")
+check(silent.Visible == false and not silent.Instance.Visible, "a silent window should start hidden")
+local silentTab = silent:AddTab({ Title = "Main" })
+local silentToggle = silentTab:AddToggle({ Title = "Auto", Flag = "SilentAuto" })
+silentToggle:Set(true)
+silent:SaveConfig("default")
+silent:SetAutoLoad("default")
+silentToggle:Set(false)
+local function toasts(window)
+	return #window._notifier.Instance:GetChildren() - 1 -- minus the UIListLayout
+end
+check(silent:LoadAutoloadConfig() and silentToggle.Value == true, "silent autoload did not apply the config")
+check(toasts(silent) == 0, "silent autoload should not notify")
+silent:Notify({ Title = "Explicit" })
+check(toasts(silent) == 1, "an explicit Notify should still show in silent mode")
+silent:AddSettingsTab()
+check(findElement(silent, "Loading animation") == nil, "no loading switch in silent mode")
+press(Enum.KeyCode.F8)
+check(silent.Visible and silent.Instance.Visible, "the toggle key should open a silent window")
+silent:Destroy()
+local loud = MD3.CreateWindow({ Title = "Loud Hub", Parent = host, ConfigFolder = "SilentHub" })
+loud:AddTab({ Title = "Main" }):AddToggle({ Title = "Auto", Flag = "SilentAuto" })
+check(loud.Instance.Visible and loud:LoadAutoloadConfig() and toasts(loud) == 1, "a normal window should notify on autoload")
+loud:Destroy()
+
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.
 local layouts, unsorted = 0, 0
