@@ -4688,6 +4688,54 @@ Theme.Presets = {
 	},
 }
 
+-- LinoriaLib's built-in themes (github.com/engnyg/LinoriaLib,
+-- addons/ThemeManager.lua), in its order. Each is its five colors:
+-- { name, FontColor, MainColor, AccentColor, BackgroundColor, OutlineColor }.
+-- Its "Default" is called "Linoria" here so it isn't mistaken for ours.
+local LINORIA_THEMES = {
+	{ "Linoria", "ffffff", "1c1c1c", "0055ff", "141414", "323232" },
+	{ "BBot", "ffffff", "1e1e1e", "7e48a3", "232323", "141414" },
+	{ "Fatality", "ffffff", "1e1842", "c50754", "191335", "3c355d" },
+	{ "Jester", "ffffff", "242424", "db4467", "1c1c1c", "373737" },
+	{ "Mint", "ffffff", "242424", "3db488", "1c1c1c", "373737" },
+	{ "Tokyo Night", "ffffff", "191925", "6759b3", "16161f", "323232" },
+	{ "Ubuntu", "ffffff", "3e3e3e", "e2581e", "323232", "191919" },
+	{ "Quartz", "ffffff", "232330", "426e87", "1d1b26", "27232f" },
+}
+
+-- Maps a LinoriaLib theme onto the M3 roles: MainColor is the window and
+-- the rows (its element boxes), BackgroundColor the content panel (its
+-- groupboxes) and input fields, OutlineColor the outlines and selection.
+-- Secondary text and the error color are the ones LinoriaLib uses for every
+-- theme (DisabledTextColor, RiskColor). Like NeverLose, the accent is the
+-- theme color itself, so changing the theme color re-colors it.
+local function linoriaPreset(name, font, main, accent, background, outline)
+	return {
+		Name = name,
+		Seed = accent,
+		Mode = "Dark",
+		Overrides = {
+			OnPrimary = font,
+			Surface = main,
+			SurfaceContainerLow = background,
+			SurfaceContainerHigh = main,
+			SurfaceContainerHighest = background,
+			SecondaryContainer = outline,
+			OnSecondaryContainer = font,
+			OutlineVariant = outline,
+			OnSurface = font,
+			OnSurfaceVariant = "8e8e8e",
+			Error = "ff3232",
+			HUDBackground = main,
+		},
+		Follow = { Primary = "Seed", IconSelected = "Primary", IconAccent = "Primary" },
+	}
+end
+
+for _, spec in LINORIA_THEMES do
+	table.insert(Theme.Presets, linoriaPreset(table.unpack(spec)))
+end
+
 -- Applies a preset from Theme.Presets by name. A seed-only preset changes
 -- the theme color and keeps custom colors; a full preset also sets its mode
 -- and colors. Colors a previously applied full preset set, and that haven't

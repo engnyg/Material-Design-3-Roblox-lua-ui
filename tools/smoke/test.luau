@@ -1024,6 +1024,45 @@ presetDropdown:Set("Blue")
 check(presetWin.Theme.Colors.Surface ~= rgb(8, 8, 13), "switching the dropdown away from NeverLose kept its colors")
 presetWin:Destroy()
 
+-- LinoriaLib's 8 built-in themes, copied from its addons/ThemeManager.lua
+-- ("Default" is "Linoria" here): { FontColor, MainColor, AccentColor, BackgroundColor, OutlineColor }
+local linoria = {
+	Linoria = { "ffffff", "1c1c1c", "0055ff", "141414", "323232" },
+	BBot = { "ffffff", "1e1e1e", "7e48a3", "232323", "141414" },
+	Fatality = { "ffffff", "1e1842", "c50754", "191335", "3c355d" },
+	Jester = { "ffffff", "242424", "db4467", "1c1c1c", "373737" },
+	Mint = { "ffffff", "242424", "3db488", "1c1c1c", "373737" },
+	["Tokyo Night"] = { "ffffff", "191925", "6759b3", "16161f", "323232" },
+	Ubuntu = { "ffffff", "3e3e3e", "e2581e", "323232", "191919" },
+	Quartz = { "ffffff", "232330", "426e87", "1d1b26", "27232f" },
+}
+local presetNames = {}
+for _, preset in MD3.Theme.Presets do
+	check(not presetNames[preset.Name], `duplicate preset name {preset.Name}`)
+	presetNames[preset.Name] = true
+end
+local hex = Color3.fromHex
+for name, c in linoria do
+	local lt = MD3.Theme.new(nil, "Light")
+	check(lt:ApplyPreset(name), `LinoriaLib theme {name} is missing`)
+	local col = lt.Colors
+	check(lt.Mode == "Dark" and lt.Seed:ToHex() == c[3] and col.Primary == hex(c[3]), `{name}: accent`)
+	check(col.OnSurface == hex(c[1]) and col.OnPrimary == hex(c[1]), `{name}: font color`)
+	check(col.Surface == hex(c[2]) and col.SurfaceContainerHigh == hex(c[2]) and col.HUDBackground == hex(c[2]), `{name}: main color`)
+	check(col.SurfaceContainerLow == hex(c[4]) and col.SurfaceContainerHighest == hex(c[4]), `{name}: background color`)
+	check(col.OutlineVariant == hex(c[5]) and col.SecondaryContainer == hex(c[5]), `{name}: outline color`)
+	check(col.OnSurfaceVariant == hex("8e8e8e") and col.Error == hex("ff3232") and col.IconSelected == col.Primary, `{name}: fixed colors`)
+end
+-- Switching between full presets replaces the whole look
+local switcher = MD3.Theme.new()
+switcher:ApplyPreset("Fatality")
+switcher:ApplyPreset("NeverLose")
+check(switcher.Colors.Surface == rgb(8, 8, 13) and switcher.Colors.SurfaceContainerLow == hex("0d1116"), "Fatality -> NeverLose should switch the surfaces")
+check(switcher.Colors.OnSurfaceVariant == rgb(186, 186, 186), "Fatality -> NeverLose should switch the secondary text")
+switcher:ApplyPreset("Tokyo Night")
+switcher:SetSeedColor(hex("3db488"))
+check(switcher.Colors.Primary == hex("3db488") and switcher.Colors.Surface == hex("191925"), "a new theme color on Tokyo Night: new accent, same surfaces")
+
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.
 local layouts, unsorted = 0, 0
