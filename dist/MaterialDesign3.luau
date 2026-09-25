@@ -4414,6 +4414,11 @@ function Theme:_build()
 	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
 	colors.IconAccent = overrides.IconAccent or overrides.Icon or colors.Primary
 	colors.IconSelected = overrides.IconSelected or overrides.Icon or colors.OnSecondaryContainer
+	-- HUD (watermark, keybind list, indicators): colors follow the window's
+	-- rows / outline / text unless set, but transparency is the HUD's own.
+	colors.HUDBackground = overrides.HUDBackground or colors.SurfaceContainerHigh
+	colors.HUDOutline = overrides.HUDOutline or colors.OutlineVariant
+	colors.HUDText = overrides.HUDText or colors.OnSurface
 
 	-- Transparency per role, cascading the same way as the colors.
 	local t = self._transparency
@@ -4423,6 +4428,9 @@ function Theme:_build()
 	transparency.Icon = t.Icon or transparency.OnSurfaceVariant
 	transparency.IconAccent = t.IconAccent or t.Icon
 	transparency.IconSelected = t.IconSelected or t.Icon
+	-- Deliberately not inherited from the window's roles, so a see-through
+	-- window can have a solid HUD and the other way round.
+	transparency.HUDOutline = t.HUDOutline or t.HUDBackground
 	self.Transparency = transparency
 	return colors
 end
@@ -7217,6 +7225,12 @@ loaders[newNode("HUD", N_Window)] = function(script, require)
 	auto:SetColor("Error")
 
 	Window:SetHUDVisible(false)                    -- hide every HUD piece at once
+	Window:SetHUDTransparency(0.4, 0)              -- see-through background, solid text
+	wm:SetTransparency(0.8)                        -- just this piece
+
+	Transparency is the HUD's own: the theme roles HUDBackground (fills,
+	outlines) and HUDText (text, icons) — never the window's roles — so a
+	see-through window can have a solid HUD and the other way round.
 ]]
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -7257,35 +7271,88 @@ local function place(frame: GuiObject, position, default: string)
 	frame.AnchorPoint = preset[2]
 end
 
--- The rounded, outlined surface every HUD piece is drawn on.
-local function surface(themer, className: string, props)
-	local frame = Create(className)(props)
-	themer:Bind(frame, { BackgroundColor3 = "SurfaceContainerHigh" })
-	themer:Bind(Create("UIStroke") {
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Thickness = 1,
-		Parent = frame,
-	}, { Color = "OutlineVariant" })
-	return frame
+local function resolve(colors, color)
+	return if typeof(color) == "Color3" then color else colors[color]
 end
 
--- Re-colors an icon made by Base.Glyph with a theme role or a Color3.
-local function bindIconColor(themer, icon: GuiObject, color)
-	if icon:IsA("ImageLabel") then
-		themer:Bind(icon, { ImageColor3 = color })
-	else
-		themer:Bind(icon, { TextColor3 = color })
+-- Theme bindings for one HUD piece. Colors come from a theme role or a
+-- Color3; transparency comes only from the HUD's own roles (HUDBackground
+-- for fills and outlines, HUDText for text and icons) or the piece's own
+-- :SetTransparency, never from the color's role, so window transparency
+-- never leaks into the HUD.
+local function painter(window, piece)
+	local themer, theme = window._themer, window.Theme
+	local function fillT()
+		return piece._fillTransparency or theme:GetTransparency("HUDBackground") or 0
 	end
+	local function outlineT()
+		return piece._fillTransparency or theme:GetTransparency("HUDOutline") or 0
+	end
+	local function contentT()
+		return piece._contentTransparency or theme:GetTransparency("HUDText") or 0
+	end
+
+	local paint = {}
+	function paint.Fill(inst: GuiObject, color)
+		themer:Bind(inst, {
+			BackgroundColor3 = function(colors)
+				return resolve(colors, color)
+			end,
+			BackgroundTransparency = fillT,
+		})
+	end
+	function paint.Outline(inst: Instance) -- a UIStroke or a 1 px line Frame
+		local colorProp = if inst:IsA("UIStroke") then "Color" else "BackgroundColor3"
+		local transparencyProp = if inst:IsA("UIStroke") then "Transparency" else "BackgroundTransparency"
+		themer:Bind(inst, {
+			[colorProp] = function(colors)
+				return colors.HUDOutline
+			end,
+			[transparencyProp] = outlineT,
+		})
+	end
+	-- Text, or an icon made by paint.Icon. color = nil keeps the color as-is
+	-- (a colored logo) and only applies the transparency.
+	function paint.Content(inst: GuiObject, color)
+		local image = inst:IsA("ImageLabel")
+		local map = { [if image then "ImageTransparency" else "TextTransparency"] = contentT }
+		if color ~= nil then
+			map[if image then "ImageColor3" else "TextColor3"] = function(colors)
+				return resolve(colors, color)
+			end
+		end
+		themer:Bind(inst, map)
+	end
+	-- `tint` = false keeps a colored image (e.g. a logo) as-is.
+	function paint.Icon(name, size: number, color, parent: Instance, order: number, tint: boolean?)
+		if not name or not Base.CanShowIcon(name) then
+			return nil
+		end
+		local icon = Base.Glyph(themer, name, size, nil, parent, tint)
+		icon.LayoutOrder = order
+		paint.Content(icon, if tint == false and icon:IsA("ImageLabel") then nil else color)
+		return icon
+	end
+	-- The rounded, outlined surface every HUD piece is drawn on.
+	function paint.Surface(props)
+		local frame = Create("Frame")(props)
+		paint.Fill(frame, "HUDBackground")
+		paint.Outline(Create("UIStroke") {
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			Thickness = 1,
+			Parent = frame,
+		})
+		return frame
+	end
+	return paint
 end
 
--- `tint` = false keeps a colored image (e.g. a logo) as-is.
-local function makeIcon(themer, name, size: number, color, parent: Instance, order: number, tint: boolean?)
-	if not name or not Base.CanShowIcon(name) then
-		return nil
-	end
-	local icon = Base.Glyph(themer, name, size, color, parent, tint)
-	icon.LayoutOrder = order
-	return icon
+-- :SetTransparency(background, text) shared by every HUD piece: 0 = solid,
+-- 1 = invisible, nil = follow the HUD setting (Window:SetHUDTransparency).
+local function setTransparency(piece, background: number?, text: number?)
+	piece._fillTransparency = if background then math.clamp(background, 0, 1) else nil
+	piece._contentTransparency = if text then math.clamp(text, 0, 1) else nil
+	piece._window._themer:Refresh()
 end
 
 -- One full-screen frame per window holding every HUD piece. It lives beside
@@ -7330,7 +7397,6 @@ Watermark.__index = Watermark
 
 function HUD.Watermark(window, props)
 	props = props or {}
-	local themer = window._themer
 	local self = setmetatable({
 		_window = window,
 		_blocks = {},
@@ -7338,9 +7404,12 @@ function HUD.Watermark(window, props)
 		_fast = {}, -- updaters run every 0.5 s (FPS)
 		_slow = {}, -- updaters run every second (ping, clock)
 		_maid = Maid.new(),
+		_fillTransparency = props.BackgroundTransparency,
+		_contentTransparency = props.TextTransparency,
 	}, Watermark)
+	self._paint = painter(window, self)
 
-	local frame = surface(themer, "Frame", {
+	local frame = self._paint.Surface({
 		Name = "Watermark",
 		BorderSizePixel = 0,
 		Active = true,
@@ -7396,7 +7465,7 @@ end
 -- Returns a block with :SetText / :SetIcon / :SetVisible / :OnClick / :Destroy.
 function Watermark:AddBlock(iconOrProps, text: string?)
 	local props = if type(iconOrProps) == "table" then iconOrProps else { Icon = iconOrProps, Text = text }
-	local themer = self._window._themer
+	local paint = self._paint
 	self._order += 1
 
 	local separator = Create("Frame") {
@@ -7406,7 +7475,7 @@ function Watermark:AddBlock(iconOrProps, text: string?)
 		LayoutOrder = self._order * 2 - 1,
 		Parent = self.Instance,
 	}
-	themer:Bind(separator, { BackgroundColor3 = "OutlineVariant" })
+	paint.Outline(separator)
 
 	local frame = Create("Frame") {
 		Name = "Block",
@@ -7433,7 +7502,7 @@ function Watermark:AddBlock(iconOrProps, text: string?)
 		Parent = frame,
 	}
 	Typography.Apply(label, if props.Emphasis then "TitleSmall" else "LabelLarge")
-	themer:Bind(label, { TextColor3 = props.TextColor or "OnSurface" })
+	paint.Content(label, props.TextColor or "HUDText")
 
 	local block = setmetatable({
 		Instance = frame,
@@ -7445,7 +7514,7 @@ function Watermark:AddBlock(iconOrProps, text: string?)
 		_visible = true,
 		_maid = Maid.new(),
 	}, Block)
-	block._icon = makeIcon(themer, props.Icon, 16, block._iconColor, frame, 1, props.Tint)
+	block._icon = paint.Icon(props.Icon, 16, block._iconColor, frame, 1, props.Tint)
 	if props.Callback then
 		table.insert(block._callbacks, props.Callback)
 	end
@@ -7539,6 +7608,9 @@ function Watermark:SetVisible(visible: boolean)
 	self.Instance.Visible = visible
 end
 
+-- 0 = solid, 1 = invisible; nil = follow the HUD setting. Blocks share it.
+Watermark.SetTransparency = setTransparency
+
 function Watermark:Destroy()
 	if self._destroyed then
 		return
@@ -7560,23 +7632,22 @@ function Block:GetText(): string
 end
 
 function Block:SetIcon(name)
-	local themer = self._watermark._window._themer
 	if self._icon then
 		self._icon:Destroy()
 	end
-	self._icon = makeIcon(themer, name, 16, self._iconColor, self.Instance, 1)
+	self._icon = self._watermark._paint.Icon(name, 16, self._iconColor, self.Instance, 1)
 end
 
 -- A theme role ("Primary", "Error", ...) or a Color3.
 function Block:SetIconColor(color)
 	self._iconColor = color
 	if self._icon then
-		bindIconColor(self._watermark._window._themer, self._icon, color)
+		self._watermark._paint.Content(self._icon, color)
 	end
 end
 
 function Block:SetTextColor(color)
-	self._watermark._window._themer:Bind(self._label, { TextColor3 = color })
+	self._watermark._paint.Content(self._label, color)
 end
 
 function Block:SetVisible(visible: boolean)
@@ -7645,15 +7716,18 @@ KeybindList.__index = KeybindList
 ]]
 function HUD.KeybindList(window, props)
 	props = props or {}
-	local themer = window._themer
 	local self = setmetatable({
 		_window = window,
 		_showAll = props.ShowAll == true,
 		_visible = props.Visible ~= false,
 		_maid = Maid.new(),
+		_fillTransparency = props.BackgroundTransparency,
+		_contentTransparency = props.TextTransparency,
 	}, KeybindList)
+	local paint = painter(window, self)
+	self._paint = paint
 
-	local frame = surface(themer, "Frame", {
+	local frame = paint.Surface({
 		Name = "Keybinds",
 		BorderSizePixel = 0,
 		Active = true,
@@ -7689,7 +7763,7 @@ function HUD.KeybindList(window, props)
 		},
 		Parent = frame,
 	}
-	makeIcon(themer, props.Icon or "keyboard", 18, "IconAccent", header, 1)
+	paint.Icon(props.Icon or "keyboard", 18, "IconAccent", header, 1)
 	local title = Create("TextLabel") {
 		Name = "Title",
 		BackgroundTransparency = 1,
@@ -7701,7 +7775,7 @@ function HUD.KeybindList(window, props)
 		Parent = header,
 	}
 	Typography.Apply(title, "TitleSmall")
-	themer:Bind(title, { TextColor3 = "OnSurface" })
+	paint.Content(title, "HUDText")
 	self._title = title
 
 	local divider = Create("Frame") {
@@ -7711,7 +7785,7 @@ function HUD.KeybindList(window, props)
 		LayoutOrder = 2,
 		Parent = frame,
 	}
-	themer:Bind(divider, { BackgroundColor3 = "OutlineVariant" })
+	paint.Outline(divider)
 
 	self._rows = Create("Frame") {
 		Name = "Rows",
@@ -7757,7 +7831,7 @@ function KeybindList:_render()
 	if self._destroyed or self._window._destroyed then
 		return
 	end
-	local themer = self._window._themer
+	local paint = self._paint
 	for _, child in self._rows:GetChildren() do
 		if not child:IsA("UIListLayout") then
 			child:Destroy()
@@ -7784,7 +7858,7 @@ function KeybindList:_render()
 			Parent = row,
 		}
 		Typography.Apply(name, "BodyMedium")
-		themer:Bind(name, { TextColor3 = if active or not self._showAll then "OnSurface" else "OnSurfaceVariant" })
+		paint.Content(name, if active or not self._showAll then "HUDText" else "OnSurfaceVariant")
 
 		local key = Create("TextLabel") {
 			Name = "Key",
@@ -7799,10 +7873,8 @@ function KeybindList:_render()
 		}
 		Shape.Corner(Shape.Small, key)
 		Typography.Apply(key, "LabelMedium")
-		themer:Bind(key, {
-			BackgroundColor3 = if active then "PrimaryContainer" else "SurfaceContainerHighest",
-			TextColor3 = if active then "OnPrimaryContainer" else "OnSurfaceVariant",
-		})
+		paint.Fill(key, if active then "PrimaryContainer" else "SurfaceContainerHighest")
+		paint.Content(key, if active then "OnPrimaryContainer" else "OnSurfaceVariant")
 	end
 
 	if #entries == 0 and self._showAll then
@@ -7815,7 +7887,7 @@ function KeybindList:_render()
 			Parent = self._rows,
 		}
 		Typography.Apply(empty, "BodyMedium")
-		themer:Bind(empty, { TextColor3 = "OnSurfaceVariant" })
+		paint.Content(empty, "OnSurfaceVariant")
 	end
 
 	self.Count = #entries
@@ -7836,6 +7908,8 @@ end
 function KeybindList:SetTitle(text: string)
 	self._title.Text = text
 end
+
+KeybindList.SetTransparency = setTransparency
 
 function KeybindList:Destroy()
 	if self._destroyed then
@@ -7889,12 +7963,19 @@ end
 ]]
 function HUD.Indicator(window, props)
 	props = props or {}
-	local themer = window._themer
 	local stack = indicatorStack(window, props.Position)
 	window._hudIndicatorCount += 1
-	local self = setmetatable({ _window = window, _color = props.Color or "Primary", _maid = Maid.new() }, Indicator)
+	local self = setmetatable({
+		_window = window,
+		_color = props.Color or "Primary",
+		_maid = Maid.new(),
+		_fillTransparency = props.BackgroundTransparency,
+		_contentTransparency = props.TextTransparency,
+	}, Indicator)
+	local paint = painter(window, self)
+	self._paint = paint
 
-	local chip = surface(themer, "Frame", {
+	local chip = paint.Surface({
 		Name = props.Text or "Indicator",
 		BorderSizePixel = 0,
 		Size = UDim2.fromOffset(0, 30),
@@ -7923,9 +8004,9 @@ function HUD.Indicator(window, props)
 		Parent = chip,
 	}
 	Typography.Apply(label, "LabelLarge")
-	themer:Bind(label, { TextColor3 = self._color })
+	paint.Content(label, self._color)
 	self._label = label
-	self._icon = makeIcon(themer, props.Icon, 16, self._color, chip, 1)
+	self._icon = paint.Icon(props.Icon, 16, self._color, chip, 1)
 
 	-- Dragging an indicator moves the whole stack.
 	makeDraggable(self._maid, chip, stack)
@@ -7945,16 +8026,15 @@ function Indicator:SetIcon(name)
 	if self._icon then
 		self._icon:Destroy()
 	end
-	self._icon = makeIcon(self._window._themer, name, 16, self._color, self.Instance, 1)
+	self._icon = self._paint.Icon(name, 16, self._color, self.Instance, 1)
 end
 
 -- A theme role ("Primary", "Error", "Tertiary", ...) or a Color3.
 function Indicator:SetColor(color)
 	self._color = color
-	local themer = self._window._themer
-	themer:Bind(self._label, { TextColor3 = color })
+	self._paint.Content(self._label, color)
 	if self._icon then
-		bindIconColor(themer, self._icon, color)
+		self._paint.Content(self._icon, color)
 	end
 end
 
@@ -7962,6 +8042,8 @@ function Indicator:SetVisible(visible: boolean)
 	self.Instance.Visible = visible
 end
 Indicator.SetRender = Indicator.SetVisible -- NeverLose-style name
+
+Indicator.SetTransparency = setTransparency
 
 function Indicator:Destroy()
 	if self._destroyed then
@@ -9314,6 +9396,25 @@ function Window:SetHUDVisible(visible: boolean)
 	HUD.Layer(self).Visible = visible
 end
 
+-- HUD transparency (0 = solid, 1 = invisible), separate from the window's:
+-- `background` for fills and outlines, `text` for text and icons. nil leaves
+-- that part as it is. Stored as the theme's HUDBackground / HUDText
+-- transparency, so it's saved in configs and theme exports.
+function Window:SetHUDTransparency(background: number?, text: number?)
+	local transparency = self.Theme:GetTransparencies()
+	if background ~= nil then
+		transparency.HUDBackground = background
+	end
+	if text ~= nil then
+		transparency.HUDText = text
+	end
+	self.Theme:SetOverrides(self.Theme:GetOverrides(), transparency)
+end
+
+function Window:GetHUDTransparency(): (number, number)
+	return self.Theme:GetTransparency("HUDBackground") or 0, self.Theme:GetTransparency("HUDText") or 0
+end
+
 --== Configs ==--
 
 function Window:CanSaveConfigs(): boolean
@@ -9521,18 +9622,6 @@ function Window:AddSettingsTab(props)
 			self:SetToggleKey(key)
 		end,
 	})
-	-- Only when the script built some HUD before adding the settings tab.
-	if self._hudLayer then
-		interface:AddToggle({
-			Title = "Show HUD",
-			Description = "Watermark, keybind list and indicators",
-			Default = self._hudLayer.Visible,
-			Flag = "MD3_ShowHUD",
-			Callback = function(on)
-				self:SetHUDVisible(on)
-			end,
-		})
-	end
 	interface:AddButton({
 		Title = "Reset window size",
 		Description = "Drag the bottom-right corner to resize",
@@ -9549,6 +9638,55 @@ function Window:AddSettingsTab(props)
 			self:Destroy()
 		end,
 	})
+
+	-- Only when the script built some HUD before adding the settings tab.
+	if self._hudLayer then
+		local hud = tab:AddSection("HUD")
+		hud:AddToggle({
+			Title = "Show HUD",
+			Description = "Watermark, keybind list and indicators",
+			Default = self._hudLayer.Visible,
+			Flag = "MD3_ShowHUD",
+			Callback = function(on)
+				self:SetHUDVisible(on)
+			end,
+		})
+		-- Transparency lives in the theme (saved with MD3_ThemeOverrides), so
+		-- these sliders have no Flag and just mirror it.
+		local sliders = {
+			{ Role = "HUDBackground", Title = "Background transparency", Description = "Separate from the window's" },
+			{ Role = "HUDText", Title = "Text transparency", Description = "Text and icons" },
+		}
+		local editing = nil
+		for _, entry in sliders do
+			entry.Slider = hud:AddSlider({
+				Title = entry.Title,
+				Description = entry.Description,
+				Min = 0,
+				Max = 100,
+				Step = 1,
+				Suffix = "%",
+				Default = math.round((self.Theme:GetTransparency(entry.Role) or 0) * 100),
+				Callback = function(percent)
+					editing = entry.Role
+					if entry.Role == "HUDBackground" then
+						self:SetHUDTransparency(percent / 100, nil)
+					else
+						self:SetHUDTransparency(nil, percent / 100)
+					end
+					editing = nil
+				end,
+			})
+		end
+		self._maid:GiveTask(self.Theme.Changed:Connect(function()
+			for _, entry in sliders do
+				local percent = math.round((self.Theme:GetTransparency(entry.Role) or 0) * 100)
+				if entry.Role ~= editing and entry.Slider.Value ~= percent then
+					entry.Slider:Set(percent, true)
+				end
+			end
+		end))
+	end
 
 	if self:CanSaveConfigs() then
 		local configs = tab:AddSection("Configuration")

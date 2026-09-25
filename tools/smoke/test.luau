@@ -678,6 +678,66 @@ showHud:Set(false)
 check(not layer.Visible, "Show HUD off did not hide the HUD")
 showHud:Set(true)
 
+-- HUD transparency is separate from the window's
+local hudTheme = hudWindow.Theme
+local wmStroke = wm.Instance:FindFirstChild("UIStroke")
+local titleLabel = wm.TitleBlock._label
+local hcLabel = hc._label
+local function near(a, b)
+	return type(a) == "number" and math.abs(a - b) < 1e-6
+end
+hudTheme:SetTransparency("SurfaceContainerHigh", 0.5) -- window rows
+hudTheme:SetTransparency("OnSurface", 0.5) -- window text
+hudTheme:SetTransparency("Primary", 0.5) -- the indicator's color role
+check(near(wm.Instance.BackgroundTransparency, 0) and near(titleLabel.TextTransparency, 0) and near(hcLabel.TextTransparency, 0),
+	"window transparency leaked into the HUD")
+check(near(auto._label.TextTransparency, 0), "an indicator took its color role's transparency")
+
+hudWindow:SetHUDTransparency(0.4, 0.2)
+local bg, text = hudWindow:GetHUDTransparency()
+check(near(bg, 0.4) and near(text, 0.2), "GetHUDTransparency wrong")
+check(near(wm.Instance.BackgroundTransparency, 0.4) and near(wmStroke.Transparency, 0.4), "HUD background transparency not applied")
+check(near(blocks[2]._separator.BackgroundTransparency, 0.4), "separators should follow the HUD background")
+check(near(titleLabel.TextTransparency, 0.2) and near(hcLabel.TextTransparency, 0.2), "HUD text transparency not applied")
+local titleIcon = wm.TitleBlock._icon
+check(titleIcon ~= nil and near(if titleIcon:IsA("ImageLabel") then titleIcon.ImageTransparency else titleIcon.TextTransparency, 0.2), "HUD icons should follow the text transparency")
+press(Enum.KeyCode.G) -- Fly on again, so the list has a row with a key chip
+local chip = list._rows:FindFirstChild("Fly").Key
+check(near(chip.BackgroundTransparency, 0.4) and near(chip.TextTransparency, 0.2), "keybind chips should follow the HUD transparency")
+local windowRow = hudTab._elements[1].Instance
+check(near(windowRow.BackgroundTransparency, 0.5), "HUD transparency leaked into the window")
+
+auto:SetTransparency(0.9)
+check(near(auto.Instance.BackgroundTransparency, 0.9) and near(auto._label.TextTransparency, 0.2), "per-piece background transparency")
+check(near(hc.Instance.BackgroundTransparency, 0.4), "one indicator's transparency changed another")
+auto:SetTransparency(nil, 0.7)
+check(near(auto.Instance.BackgroundTransparency, 0.4) and near(auto._label.TextTransparency, 0.7), "per-piece text transparency")
+hudTheme:Toggle()
+check(near(auto._label.TextTransparency, 0.7) and near(wm.Instance.BackgroundTransparency, 0.4), "HUD transparency lost on theme change")
+check(near(hudWindow.Flags.MD3_ThemeOverrides:Get().Transparency.HUDBackground, 0.4), "HUD transparency is not saved with the theme")
+
+local function findElement(window, title)
+	for _, tab in window.Tabs do
+		for _, section in tab._sections do
+			for _, element in section._elements do
+				if element._title and element._title.Text == title then
+					return element
+				end
+			end
+		end
+	end
+	return nil
+end
+local bgSlider = findElement(hudWindow, "Background transparency")
+local textSlider = findElement(hudWindow, "Text transparency")
+check(bgSlider ~= nil and textSlider ~= nil, "settings tab should have HUD transparency sliders")
+check(bgSlider.Value == 40 and textSlider.Value == 20, "HUD sliders did not follow SetHUDTransparency")
+bgSlider:Set(75)
+check(near(wm.Instance.BackgroundTransparency, 0.75) and near(titleLabel.TextTransparency, 0.2), "background slider did not set the HUD background")
+check(near(windowRow.BackgroundTransparency, 0.5), "HUD slider changed the window")
+hudWindow:SetHUDTransparency(0, 0)
+check(bgSlider.Value == 0 and textSlider.Value == 0 and near(wm.Instance.BackgroundTransparency, 0), "HUD back to solid")
+
 hudWindow:Destroy()
 check(wm._destroyed and list._destroyed and all._destroyed and auto._destroyed, "HUD pieces not destroyed with the window")
 for _ = 1, 30 do

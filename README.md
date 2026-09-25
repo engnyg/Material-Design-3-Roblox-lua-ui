@@ -78,7 +78,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
-`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`（見下方 HUD）、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
 
 ### HUD（浮水印、快捷鍵列表、狀態指示）
 
@@ -115,12 +115,18 @@ Auto:SetColor("Error")           -- 主題色角色（Primary、Tertiary、Error
 Auto:SetVisible(false)           -- 別名 :SetRender(false)
 
 Window:SetHUDVisible(false)      -- 一次隱藏／顯示所有 HUD
+
+-- 透明度：跟視窗分開，0 = 不透明、1 = 全透明
+Window:SetHUDTransparency(0.4, 0)   -- (背景, 文字與圖標)；nil = 那部分不變
+Watermark:SetTransparency(0.8)      -- 只調這一塊（浮水印、快捷鍵列表、單一狀態指示都有）
+Auto:SetTransparency(nil, 0.5)      -- 背景跟著整體設定，只改文字
 ```
 
 - **位置**：`Position` 可填 `"TopLeft"`、`"Top"`、`"TopRight"`、`"Left"`、`"Right"`、`"BottomLeft"`、`"Bottom"`、`"BottomRight"`，或 `UDim2`（左上角座標）。預設：浮水印左上、快捷鍵列表左側中間、狀態指示左下。所有狀態指示共用一個堆疊，位置以第一個的 `Position` 為準。
 - **快捷鍵列表**會即時跟著變化：切換開關、按住／放開、重新綁定、刪除快捷鍵都會馬上更新。Press 模式的快捷鍵沒有「開著」的狀態，只在 `ShowAll = true` 時出現。沒綁按鍵的快捷鍵不會列出。Toggle 模式可以用 `keybind:SetState(true)` 從程式同步狀態（不觸發 Callback）。
-- **設定頁開關**：先建立 HUD 再呼叫 `Window:AddSettingsTab()`，設定頁的 Interface 區塊會多一個「Show HUD」開關（Flag `MD3_ShowHUD`，會存進設定檔）。
-- 物件方法：浮水印 `:AddBlock`、`:AddFPS`、`:AddPing`、`:AddClock(format?)`、`:SetVisible`、`:Destroy`，`.TitleBlock` 是標題區塊；區塊 `:SetText`、`:GetText`、`:SetIcon`、`:SetIconColor`、`:SetTextColor`、`:SetVisible`、`:OnClick`、`:Destroy`；快捷鍵列表 `:SetVisible`、`:SetShowAll`、`:SetTitle`、`:Destroy`、`.Count`（目前列出幾個）；狀態指示 `:SetText`、`:GetText`、`:SetIcon`、`:SetColor`、`:SetVisible`、`:Destroy`。
+- **透明度跟視窗分開**：HUD 有自己的背景透明度（底色、外框、分隔線、按鍵標籤）和文字透明度（文字、圖標），主題編輯器把視窗的 Rows、Text 等調成半透明**不會**影響 HUD，反過來也一樣。`Window:SetHUDTransparency(背景, 文字)` 調整整個 HUD、`GetHUDTransparency()` 讀取；每一塊還能用 `:SetTransparency(背景, 文字)` 單獨覆寫（給 `nil` 就回到整體設定），建立時也能給 `BackgroundTransparency`／`TextTransparency`。整體 HUD 透明度存在主題裡（`HUDBackground`／`HUDText` 兩個顏色角色的透明度），會跟著設定檔、`Copy theme` 一起存。HUD 的顏色預設跟視窗一樣，想分開也可以：`Window.Theme:SetOverride("HUDBackground", Color3.fromRGB(20, 20, 28))`、`"HUDText"`、`"HUDOutline"`。
+- **設定頁**：先建立 HUD 再呼叫 `Window:AddSettingsTab()`，設定頁會多一個 **HUD** 區塊：「Show HUD」開關（Flag `MD3_ShowHUD`，會存進設定檔）、「Background transparency」和「Text transparency」兩個滑桿（0–100%）。
+- 物件方法：浮水印 `:AddBlock`、`:AddFPS`、`:AddPing`、`:AddClock(format?)`、`:SetVisible`、`:SetTransparency`、`:Destroy`，`.TitleBlock` 是標題區塊；區塊 `:SetText`、`:GetText`、`:SetIcon`、`:SetIconColor`、`:SetTextColor`、`:SetVisible`、`:OnClick`、`:Destroy`；快捷鍵列表 `:SetVisible`、`:SetShowAll`、`:SetTitle`、`:SetTransparency`、`:Destroy`、`.Count`（目前列出幾個）；狀態指示 `:SetText`、`:GetText`、`:SetIcon`、`:SetColor`、`:SetVisible`、`:SetTransparency`、`:Destroy`。
 
 ### 載入外部圖片（`MD3.Assets`）
 

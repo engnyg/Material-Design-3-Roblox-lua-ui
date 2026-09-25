@@ -765,6 +765,25 @@ function Window:SetHUDVisible(visible: boolean)
 	HUD.Layer(self).Visible = visible
 end
 
+-- HUD transparency (0 = solid, 1 = invisible), separate from the window's:
+-- `background` for fills and outlines, `text` for text and icons. nil leaves
+-- that part as it is. Stored as the theme's HUDBackground / HUDText
+-- transparency, so it's saved in configs and theme exports.
+function Window:SetHUDTransparency(background: number?, text: number?)
+	local transparency = self.Theme:GetTransparencies()
+	if background ~= nil then
+		transparency.HUDBackground = background
+	end
+	if text ~= nil then
+		transparency.HUDText = text
+	end
+	self.Theme:SetOverrides(self.Theme:GetOverrides(), transparency)
+end
+
+function Window:GetHUDTransparency(): (number, number)
+	return self.Theme:GetTransparency("HUDBackground") or 0, self.Theme:GetTransparency("HUDText") or 0
+end
+
 --== Configs ==--
 
 function Window:CanSaveConfigs(): boolean
@@ -972,18 +991,6 @@ function Window:AddSettingsTab(props)
 			self:SetToggleKey(key)
 		end,
 	})
-	-- Only when the script built some HUD before adding the settings tab.
-	if self._hudLayer then
-		interface:AddToggle({
-			Title = "Show HUD",
-			Description = "Watermark, keybind list and indicators",
-			Default = self._hudLayer.Visible,
-			Flag = "MD3_ShowHUD",
-			Callback = function(on)
-				self:SetHUDVisible(on)
-			end,
-		})
-	end
 	interface:AddButton({
 		Title = "Reset window size",
 		Description = "Drag the bottom-right corner to resize",
@@ -1000,6 +1007,55 @@ function Window:AddSettingsTab(props)
 			self:Destroy()
 		end,
 	})
+
+	-- Only when the script built some HUD before adding the settings tab.
+	if self._hudLayer then
+		local hud = tab:AddSection("HUD")
+		hud:AddToggle({
+			Title = "Show HUD",
+			Description = "Watermark, keybind list and indicators",
+			Default = self._hudLayer.Visible,
+			Flag = "MD3_ShowHUD",
+			Callback = function(on)
+				self:SetHUDVisible(on)
+			end,
+		})
+		-- Transparency lives in the theme (saved with MD3_ThemeOverrides), so
+		-- these sliders have no Flag and just mirror it.
+		local sliders = {
+			{ Role = "HUDBackground", Title = "Background transparency", Description = "Separate from the window's" },
+			{ Role = "HUDText", Title = "Text transparency", Description = "Text and icons" },
+		}
+		local editing = nil
+		for _, entry in sliders do
+			entry.Slider = hud:AddSlider({
+				Title = entry.Title,
+				Description = entry.Description,
+				Min = 0,
+				Max = 100,
+				Step = 1,
+				Suffix = "%",
+				Default = math.round((self.Theme:GetTransparency(entry.Role) or 0) * 100),
+				Callback = function(percent)
+					editing = entry.Role
+					if entry.Role == "HUDBackground" then
+						self:SetHUDTransparency(percent / 100, nil)
+					else
+						self:SetHUDTransparency(nil, percent / 100)
+					end
+					editing = nil
+				end,
+			})
+		end
+		self._maid:GiveTask(self.Theme.Changed:Connect(function()
+			for _, entry in sliders do
+				local percent = math.round((self.Theme:GetTransparency(entry.Role) or 0) * 100)
+				if entry.Role ~= editing and entry.Slider.Value ~= percent then
+					entry.Slider:Set(percent, true)
+				end
+			end
+		end))
+	end
 
 	if self:CanSaveConfigs() then
 		local configs = tab:AddSection("Configuration")
