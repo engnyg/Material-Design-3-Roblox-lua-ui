@@ -22,6 +22,8 @@ local Window = MD3:CreateWindow({
     ConfigFolder = "MyHub",              -- 設定檔存放資料夾（executor workspace）
     IconStyle = "Outlined",              -- 圖標樣式："Outlined"（預設）| "Filled" | "Round" | "Sharp"
     LoadingScreen = true,                -- 啟動時的載入動畫；false 關閉
+    Background = nil,                    -- 自訂背景圖片：網址／rbxassetid／素材 ID（見下方）
+    BackgroundTransparency = 0.4,        -- 背景圖片透明度（0 = 圖片完全不透明）
     Silent = false,                      -- true：安靜啟動（見下方）
     KeybindNotify = true,                -- 按自己設定的快捷鍵時跳通知；false 全部關閉
 })
@@ -87,7 +89,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
-`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SkipLoading`、`SetLoadingScreenEnabled`／`GetLoadingScreenEnabled`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SetBackground`／`SetBackgroundTransparency`／`GetBackground`、`SkipLoading`、`SetLoadingScreenEnabled`／`GetLoadingScreenEnabled`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
 
 ### HUD（浮水印、快捷鍵列表、狀態指示）
 
@@ -157,6 +159,27 @@ MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭
 > **`Icon` 圖片要用白色的。** `Icon` 會用 `ImageColor3` 套上主題色，而 `ImageColor3` 是「相乘」：白色 × 主題色 = 主題色，但黑色 × 任何顏色還是黑色。Google 官方 repo 的 PNG 圖標都是黑色的，直接拿來當 `Icon` 會一直是黑的——請改用白色版本（例如 [`assets/examples/extension.png`](assets/examples/extension.png)），或直接用 Material 圖標名稱（`Icon = "home"`）。彩色圖片請放 `Logo`／通知的 `Image`，這兩個不套色。
 
 `Assets.Resolve` 接受：網址（`http(s)://`）、`rbxassetid://…`／`rbxasset://…`／`rbxthumb://…`、純數字 ID（`123456` → `rbxassetid://123456`）、或 workspace 內已有的檔案路徑（`"MyHub/icon.png"`）。下載失敗（例如拿到 GitHub 的 404 HTML 頁）或 executor 不支援 `getcustomasset` 時回傳 `""`（不顯示圖片），不會丟錯。GitHub 圖片請用 `raw.githubusercontent.com/...` 或 `github.com/.../blob/main/xxx.png?raw=true` 這種直接下載的網址。
+
+### 自訂背景
+
+視窗可以放一張背景圖片，鋪滿整個視窗（圓角跟視窗一樣、自動裁切填滿），在所有內容後面：
+
+```lua
+local Window = MD3:CreateWindow({
+    Title = "My Hub",
+    Background = "https://raw.githubusercontent.com/<你>/<repo>/main/bg.png", -- 或 "rbxassetid://123"、123
+    BackgroundTransparency = 0.4,  -- 0 = 圖片完全不透明；越大越透出視窗原本的底色
+})
+
+Window:SetBackground("rbxassetid://123456", 0.3) -- 換圖（第二個參數可省略）；失敗會保留原本的背景並回傳 false, 原因
+Window:SetBackgroundTransparency(0.6)
+Window:SetBackground(nil)                        -- 移除
+local image, transparency = Window:GetBackground()
+```
+
+- 圖片來源跟其他 `Icon`／`Logo` 一樣走 `MD3.Assets`：網址會自動下載（`HttpGet` → `writefile` → `getcustomasset`），也能用 `rbxassetid://`、純數字 ID 或 workspace 內的檔案。`CreateWindow` 裡的網址在背景下載，不會卡住建立視窗。
+- **設定頁**的 Background 區塊：「Background image」輸入框（貼網址或 ID 後按 Enter；載入失敗會跳通知並還原）、「Image transparency」滑桿、「Remove background」按鈕。兩個值會存進設定檔（Flag `MD3_Background`／`MD3_BackgroundTransparency`）。
+- 右側內容區（Content panel）和各列（Rows）預設是不透明的，所以圖片主要從標題列、左側分頁欄和邊緣露出來；想讓圖片也透到內容後面，到主題編輯器把 **Content panel**、**Rows** 的透明度調高即可。
 
 ### 主題色、圖標、文字顏色
 

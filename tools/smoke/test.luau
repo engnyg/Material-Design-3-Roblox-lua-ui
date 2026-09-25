@@ -439,8 +439,13 @@ check(Window.Flags.MD3_DarkMode.Value == false and Window.Flags.MD3_Accent.Value
 check(generatedPrimary ~= nil, "sanity")
 
 -- The editor UI itself (Settings > Theme editor)
-local editor = settings._sections[2]
-check(editor and editor._header.Text == "Theme editor", "settings tab has no theme editor section")
+local editor = nil
+for _, section in settings._sections do
+	if section._header and section._header.Text == "Theme editor" then
+		editor = section
+	end
+end
+check(editor ~= nil, "settings tab has no theme editor section")
 local function find(title)
 	for _, element in editor._elements do
 		if element._title and element._title.Text == title then
@@ -921,6 +926,39 @@ quietKeys:AddTab({ Title = "Keys" }):AddKeybind({ Title = "Dash", Default = "F10
 press(Enum.KeyCode.F10)
 check(toasts(quietKeys) == 0, "KeybindNotify = false should silence keybinds")
 quietKeys:Destroy()
+
+-- Custom background image
+local bgWin = MD3.CreateWindow({ Title = "Background Hub", Parent = host, ConfigFolder = "BgHub", Background = logoUrl })
+local bgImage = bgWin._background
+local bgSource, bgTransparency = bgWin:GetBackground()
+check(bgSource == logoUrl and bgImage.Visible and bgImage.Image ~= "", "CreateWindow Background was not loaded")
+check(near(bgTransparency, 0.4) and near(bgImage.ImageTransparency, 0.4), "default background transparency should be 0.4")
+check(bgImage.Parent == bgWin.Instance and bgImage.ZIndex < bgWin.Instance.TopBar.ZIndex, "the background should sit behind the window content")
+check(bgImage:FindFirstChild("UICorner") ~= nil and bgImage.Size == UDim2.fromScale(1, 1), "the background should fill the window with rounded corners")
+bgWin:SetBackgroundTransparency(0.7)
+check(near(bgImage.ImageTransparency, 0.7), "SetBackgroundTransparency failed")
+local shownImage = bgImage.Image
+local bgOk, bgErr = bgWin:SetBackground("https://example.com/notfound")
+check(not bgOk and bgErr ~= nil and bgImage.Image == shownImage and bgWin:GetBackground() == logoUrl, "a failed image should keep the current background")
+
+bgWin:AddSettingsTab()
+local bgInput = bgWin.Flags.MD3_Background
+local bgSlider = bgWin.Flags.MD3_BackgroundTransparency
+check(bgInput ~= nil and bgInput.Value == logoUrl and bgSlider ~= nil and bgSlider.Value == 70, "settings Background controls should show the current background")
+bgWin:SaveConfig("bg")
+bgInput:Set("")
+check(not bgImage.Visible and bgWin:GetBackground() == nil, "clearing the background field should remove the background")
+bgInput:Set("https://example.com/notfound")
+check(bgInput.Value == "" and not bgImage.Visible and toasts(bgWin) == 1, "a bad URL should notify and put the field back")
+bgSlider:Set(20)
+check(near(bgImage.ImageTransparency, 0.2), "the transparency slider did not apply")
+bgWin:SetBackground(logoUrl, 0.5)
+check(bgInput.Value == logoUrl and bgSlider.Value == 50, "SetBackground from code should update the settings controls")
+findElement(bgWin, "Remove background"):Fire()
+check(not bgImage.Visible and bgInput.Value == "", "Remove background failed")
+check(bgWin:LoadConfig("bg"), "loading the background config failed")
+check(bgImage.Visible and bgWin:GetBackground() == logoUrl and near(bgImage.ImageTransparency, 0.7), "the background was not restored from the config")
+bgWin:Destroy()
 
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.
