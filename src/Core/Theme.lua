@@ -177,6 +177,11 @@ function Theme:_build()
 	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
 	colors.IconAccent = overrides.IconAccent or overrides.Icon or colors.Primary
 	colors.IconSelected = overrides.IconSelected or overrides.Icon or colors.OnSecondaryContainer
+	-- HUD (watermark, keybind list, indicators): colors follow the window's
+	-- rows / outline / text unless set, but transparency is the HUD's own.
+	colors.HUDBackground = overrides.HUDBackground or colors.SurfaceContainerHigh
+	colors.HUDOutline = overrides.HUDOutline or colors.OutlineVariant
+	colors.HUDText = overrides.HUDText or colors.OnSurface
 
 	-- Transparency per role, cascading the same way as the colors.
 	local t = self._transparency
@@ -186,6 +191,9 @@ function Theme:_build()
 	transparency.Icon = t.Icon or transparency.OnSurfaceVariant
 	transparency.IconAccent = t.IconAccent or t.Icon
 	transparency.IconSelected = t.IconSelected or t.Icon
+	-- Deliberately not inherited from the window's roles, so a see-through
+	-- window can have a solid HUD and the other way round.
+	transparency.HUDOutline = t.HUDOutline or t.HUDBackground
 	self.Transparency = transparency
 	return colors
 end

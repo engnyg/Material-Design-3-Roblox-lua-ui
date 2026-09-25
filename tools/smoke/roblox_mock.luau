@@ -154,9 +154,15 @@ ColorSequence = {
 Font = { fromEnum = function(e) return { Family = tostring(e) } end, new = function(f) return { Family = f } end }
 
 UDim = { new = function(s, o) return { Scale = s or 0, Offset = o or 0 } end }
+local function udim2Eq(a, b)
+	return a.X.Scale == b.X.Scale and a.X.Offset == b.X.Offset and a.Y.Scale == b.Y.Scale and a.Y.Offset == b.Y.Offset
+end
 UDim2 = {
 	new = function(xs, xo, ys, yo)
-		return { X = UDim.new(xs, xo), Y = UDim.new(ys, yo) }
+		local data = { X = UDim.new(xs, xo), Y = UDim.new(ys, yo) }
+		return hostValue("UDim2", function(_, key)
+			return data[key]
+		end, { __eq = udim2Eq })
 	end,
 	fromScale = function(x, y) return UDim2.new(x, 0, y, 0) end,
 	fromOffset = function(x, y) return UDim2.new(0, x, 0, y) end,
@@ -293,6 +299,7 @@ function Instance.new(className)
 			Position = UDim2.new(0, 0, 0, 0),
 			AnchorPoint = Vector2.new(0, 0),
 			Rotation = 0,
+			Visible = true, -- GuiObjects are visible by default in Roblox
 			AbsolutePosition = Vector2.new(0, 0),
 			AbsoluteSize = Vector2.new(100, 40),
 			Text = "",
@@ -366,7 +373,13 @@ services.ContentProvider = {
 	end,
 }
 
+-- Heartbeat only fires when a test calls services.RunService.Heartbeat:Fire(dt).
+services.RunService = { Heartbeat = makeSignal(), RenderStepped = makeSignal() }
+
 local localPlayer = Instance.new("Player")
+localPlayer.GetNetworkPing = function()
+	return 0.045
+end
 local playerGui = Instance.new("PlayerGui")
 playerGui.Name = "PlayerGui"
 playerGui.Parent = localPlayer

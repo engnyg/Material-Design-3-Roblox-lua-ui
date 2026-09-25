@@ -211,7 +211,19 @@ Demo:AddButton({
 	end,
 })
 
+--== HUD: stays on screen while the window is hidden; drag any piece to move it ==--
+local Watermark = Window:AddWatermark({ FPS = true, Ping = true, Clock = true })
+Watermark:AddBlock({ Icon = "person", Text = LocalPlayer.DisplayName })
+
+Window:AddKeybindList() -- shows "Hold to sprint" while LeftShift is held
+
+local jumpIndicator = Window:AddIndicator({ Text = "INF JUMP", Icon = "bolt", Visible = infiniteJump })
+Window.Flags.InfiniteJump:OnChanged(function(on)
+	jumpIndicator:SetVisible(on)
+end)
+
 --== Settings tab (theme / accent / theme editor / toggle key / configs) ==--
+-- Added after the HUD, so it also gets a "Show HUD" switch.
 Window:AddSettingsTab()
 
 -- Stop everything this script started when the UI is unloaded.

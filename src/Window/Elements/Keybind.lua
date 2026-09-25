@@ -41,6 +41,27 @@ return function(container, props)
 
 	element.Value = toKeyCode(props.Default or props.Value or props.CurrentKeybind)
 	element.State = false -- Toggle mode: current on/off, Hold mode: held down
+	element.Mode = mode
+
+	table.insert(window._keybinds, element)
+	element._maid:GiveTask(function()
+		local index = table.find(window._keybinds, element)
+		if index then
+			table.remove(window._keybinds, index)
+		end
+		window.KeybindsChanged:Fire()
+	end)
+
+	local function setState(state: boolean)
+		element.State = state
+		window.KeybindsChanged:Fire()
+	end
+
+	-- Toggle mode: set the on/off state from code (e.g. to match a Toggle
+	-- element), without firing Callback.
+	function element:SetState(state: boolean)
+		setState(state == true)
+	end
 
 	local row = Base.Row(element, props, { ControlWidth = 96, ControlHeight = 32 })
 
@@ -72,6 +93,7 @@ return function(container, props)
 	-- A keybind's "value changed" is a rebind, so Set() reports through
 	-- ChangedCallback; Callback is reserved for the key actually being used.
 	function element:_emit(key)
+		window.KeybindsChanged:Fire()
 		self.Changed:Fire(key)
 		if changedCallback then
 			window:_call(changedCallback, key)
@@ -123,10 +145,10 @@ return function(container, props)
 		end
 		if element.Value and input.KeyCode == element.Value then
 			if mode == "Toggle" then
-				element.State = not element.State
+				setState(not element.State)
 				fire(element.State)
 			elseif mode == "Hold" then
-				element.State = true
+				setState(true)
 				fire(true)
 			else
 				fire()
@@ -137,12 +159,13 @@ return function(container, props)
 	if mode == "Hold" then
 		element._maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
 			if element.State and element.Value and input.KeyCode == element.Value then
-				element.State = false
+				setState(false)
 				fire(false)
 			end
 		end))
 	end
 
 	paint()
+	window.KeybindsChanged:Fire()
 	return Base.Finish(element)
 end
