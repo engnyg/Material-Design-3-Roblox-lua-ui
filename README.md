@@ -84,7 +84,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 | `AddInput` | `Placeholder`、`Default`、`Numeric`、`Finished`、`ClearOnSubmit` | `string` |
 | `AddDropdown` | `Options`、`Default`、`Multi`、`Searchable` | 單選 `string`／多選 `{string}`；`:SetOptions(list)` 更新選項 |
 | `AddKeybind` | `Default`、`Mode`（`Press`/`Toggle`/`Hold`）、`Callback`、`ChangedCallback`、`Notify`（按下時跳通知，Hold 預設關） | `Enum.KeyCode`（點一下再按鍵；Esc 取消、Backspace 清除） |
-| `AddColorPicker` | `Default`、`Transparency`（給了就多一條透明度條）、`Callback` | `Color3`（SV 方塊 + 色相條 + HEX 輸入）；有透明度時 Callback 收到 `(color, transparency)`、`.Transparency` 為目前值、`:SetTransparency(t)` |
+| `AddColorPicker` | `Default`、`Transparency`（給了就多一條透明度條）、`Callback` | `Color3`（點標題列展開／收合，有動畫；SV 方塊 + 色相條 + HEX 輸入；`:SetExpanded(bool)`）；有透明度時 Callback 收到 `(color, transparency)`、`.Transparency` 為目前值、`:SetTransparency(t)` |
 | `AddLabel` | 文字或 `{ Text, Color }` | `:Set(text)` |
 | `AddParagraph` | `Title`、`Content` | `:Set({ Title, Content })` |
 | `AddDivider` | — | — |

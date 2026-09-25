@@ -5924,6 +5924,8 @@ loaders[newNode("Base", N_Window_Elements)] = function(script, require)
 -- Shared plumbing for executor-window elements: the common element object
 -- (Value / Set / Get / Flag / Callback), the M3 list-item row every element
 -- is laid out in, and small glyph/state-layer helpers.
+local UserInputService = game:GetService("UserInputService")
+
 local Root = script.Parent.Parent.Parent
 local Create = require(Root.Util.Create)
 local Maid = require(Root.Util.Maid)
@@ -6239,32 +6241,77 @@ function Base.Row(element, props, opts)
 end
 
 -- Hover/press state layer + ripple for a clickable surface.
-function Base.Interactive(element, button: GuiButton, role: string?)
+-- opts.Header = the row (from Base.Row) of an element that opens content
+-- below its header (a color picker): the layer and ripples then cover only
+-- the header, and presses on the opened content don't light the row up.
+-- Returns the state layer and a function telling whether an input is on
+-- the pressable part.
+function Base.Interactive(element, button: GuiButton, role: string?, opts)
+	opts = opts or {}
 	local theme = element._window.Theme
-	local layer = StateLayer.new(button, theme.Colors[role or "OnSurface"], Shape.Medium)
+	local surface = button
+	local header = opts.Header
+	if header then
+		-- A clipping frame over the header: holds the layer and the ripples.
+		surface = Create("Frame") {
+			Name = "Touch",
+			BackgroundTransparency = 1,
+			ClipsDescendants = true,
+			Size = UDim2.new(1, 0, 1, 0),
+			ZIndex = button.ZIndex,
+			Parent = button,
+		}
+		Shape.Corner(Shape.Medium, surface)
+		local function fit()
+			-- From the top of the row to just under the header (its padding).
+			local height = header.Header.AbsolutePosition.Y + header.Header.AbsoluteSize.Y + 10 - button.AbsolutePosition.Y
+			surface.Size = UDim2.new(1, 0, 0, math.max(height, 0))
+		end
+		fit()
+		element._maid:GiveTask(button:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit))
+		element._maid:GiveTask(header.Header:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit))
+	end
+
+	local function isPress(input)
+		return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+	end
+	local function onSurface(input): boolean
+		if surface == button then
+			return true
+		end
+		local top = surface.AbsolutePosition.Y
+		return input.Position.Y >= top and input.Position.Y <= top + surface.AbsoluteSize.Y
+	end
+
+	local layer = StateLayer.new(surface, theme.Colors[role or "OnSurface"], Shape.Medium)
 	element._maid:GiveTask(layer)
 	element._maid:GiveTask(theme.Changed:Connect(function()
 		layer:SetColor(theme.Colors[role or "OnSurface"])
 	end))
+	-- On touch-only devices MouseEnter fires on a tap but MouseLeave often
+	-- never does, which left the hover tint stuck; hover is for mice.
+	local hoverable = not (UserInputService.TouchEnabled and not UserInputService.MouseEnabled)
 	element._maid:GiveTask(button.MouseEnter:Connect(function()
-		layer:SetState("Hover", true)
+		if hoverable then
+			layer:SetState("Hover", true)
+		end
 	end))
 	element._maid:GiveTask(button.MouseLeave:Connect(function()
 		layer:SetState("Hover", false)
 		layer:SetState("Pressed", false)
 	end))
 	element._maid:GiveTask(button.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		if isPress(input) and onSurface(input) then
 			layer:SetState("Pressed", true)
-			Ripple.Emit(button, input.Position, theme.Colors[role or "OnSurface"])
+			Ripple.Emit(surface, input.Position, theme.Colors[role or "OnSurface"])
 		end
 	end))
 	element._maid:GiveTask(button.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		if isPress(input) then
 			layer:SetState("Pressed", false)
 		end
 	end))
-	return layer
+	return layer, onSurface
 end
 
 -- A small rounded input "field" used by Input / Dropdown / Slider value box.
@@ -6331,14 +6378,15 @@ loaders[newNode("ColorPicker", N_Window_Elements)] = function(script, require)
 		Callback = function(color) end,
 	})
 
-	Click the swatch to expand a saturation/value square, a hue bar and a
-	hex field.
+	Click the row's header to open (animated) a saturation/value square, a
+	hue bar and a hex field; :SetExpanded(open) does it from code.
 
 	Transparency: pass Transparency = 0..1 (or Alpha = true) to add an
 	opacity bar. The callback then gets (color, transparency), .Transparency
 	holds the current value, :Set accepts { Color = c, Transparency = t },
 	and both are saved in configs.
 ]]
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Root = script.Parent.Parent.Parent
@@ -6346,6 +6394,7 @@ local Base = require(script.Parent.Base)
 local Create = require(Root.Util.Create)
 local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
+local Motion = require(Root.Core.Motion)
 
 local PICKER_HEIGHT = 128
 local HUE_WIDTH = 16
@@ -6390,7 +6439,8 @@ return function(container, props)
 	local hue, sat, val = element.Value:ToHSV()
 
 	local row = Base.Row(element, props, { ClassName = "TextButton", ControlWidth = 44, ControlHeight = 28 })
-	Base.Interactive(element, row.Frame)
+	-- Press feedback only on the header, not over the picker once it's open.
+	local _, onHeader = Base.Interactive(element, row.Frame, nil, { Header = row })
 
 	local swatch = Create("Frame") {
 		Name = "Swatch",
@@ -6408,8 +6458,9 @@ return function(container, props)
 
 	-- Rows below the square: [opacity bar] then hex / RGB.
 	local infoY = PICKER_HEIGHT + 10 + (if alphaEnabled then ALPHA_HEIGHT + 10 else 0)
+	local panelHeight = infoY + 30
 	local panel = row.Extra(false)
-	panel.Size = UDim2.new(1, 0, 0, infoY + 30)
+	panel.Size = UDim2.new(1, 0, 0, 0)
 	panel.AutomaticSize = Enum.AutomaticSize.None
 
 	-- Saturation (x) / value (y) square: hue background, a white->clear
@@ -6603,8 +6654,55 @@ return function(container, props)
 		paint()
 	end
 
+	-- Opens / closes by growing / shrinking the panel (the row follows its
+	-- height). Content is clipped only while it moves, so the cursors can
+	-- poke past the square's edges once it's open.
+	element.Expanded = false
+	local motion = nil
+	function element:SetExpanded(open: boolean)
+		if open == element.Expanded then
+			return
+		end
+		element.Expanded = open
+		-- Completed also fires for a cancelled tween; clearing `motion` first
+		-- lets its handler (below) see it was replaced and do nothing.
+		local previous = motion
+		motion = nil
+		if previous then
+			previous:Cancel()
+		end
+		panel.ClipsDescendants = true
+		panel.Visible = true
+		if open then
+			motion = TweenService:Create(panel, Motion.Emphasized(Motion.Duration.Medium2), { Size = UDim2.new(1, 0, 0, panelHeight) })
+		else
+			motion = TweenService:Create(panel, Motion.Emphasized(Motion.Duration.Short4), { Size = UDim2.new(1, 0, 0, 0) })
+		end
+		local thisMotion = motion
+		motion.Completed:Once(function()
+			if motion ~= thisMotion then
+				return
+			end
+			motion = nil
+			panel.ClipsDescendants = false
+			panel.Visible = element.Expanded
+		end)
+		motion:Play()
+	end
+
+	-- Only a press that started on the header toggles it: taps on the open
+	-- picker's gaps shouldn't fold it away under your finger.
+	local pressedHeader = false
+	element._maid:GiveTask(row.Frame.InputBegan:Connect(function(input)
+		if isPress(input) then
+			pressedHeader = onHeader(input)
+		end
+	end))
 	element._maid:GiveTask(row.Frame.Activated:Connect(function()
-		panel.Visible = not panel.Visible
+		if pressedHeader then
+			element:SetExpanded(not element.Expanded)
+		end
+		pressedHeader = false
 	end))
 
 	local dragging = nil

@@ -6,14 +6,15 @@
 		Callback = function(color) end,
 	})
 
-	Click the swatch to expand a saturation/value square, a hue bar and a
-	hex field.
+	Click the row's header to open (animated) a saturation/value square, a
+	hue bar and a hex field; :SetExpanded(open) does it from code.
 
 	Transparency: pass Transparency = 0..1 (or Alpha = true) to add an
 	opacity bar. The callback then gets (color, transparency), .Transparency
 	holds the current value, :Set accepts { Color = c, Transparency = t },
 	and both are saved in configs.
 ]]
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Root = script.Parent.Parent.Parent
@@ -21,6 +22,7 @@ local Base = require(script.Parent.Base)
 local Create = require(Root.Util.Create)
 local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
+local Motion = require(Root.Core.Motion)
 
 local PICKER_HEIGHT = 128
 local HUE_WIDTH = 16
@@ -65,7 +67,8 @@ return function(container, props)
 	local hue, sat, val = element.Value:ToHSV()
 
 	local row = Base.Row(element, props, { ClassName = "TextButton", ControlWidth = 44, ControlHeight = 28 })
-	Base.Interactive(element, row.Frame)
+	-- Press feedback only on the header, not over the picker once it's open.
+	local _, onHeader = Base.Interactive(element, row.Frame, nil, { Header = row })
 
 	local swatch = Create("Frame") {
 		Name = "Swatch",
@@ -83,8 +86,9 @@ return function(container, props)
 
 	-- Rows below the square: [opacity bar] then hex / RGB.
 	local infoY = PICKER_HEIGHT + 10 + (if alphaEnabled then ALPHA_HEIGHT + 10 else 0)
+	local panelHeight = infoY + 30
 	local panel = row.Extra(false)
-	panel.Size = UDim2.new(1, 0, 0, infoY + 30)
+	panel.Size = UDim2.new(1, 0, 0, 0)
 	panel.AutomaticSize = Enum.AutomaticSize.None
 
 	-- Saturation (x) / value (y) square: hue background, a white->clear
@@ -278,8 +282,55 @@ return function(container, props)
 		paint()
 	end
 
+	-- Opens / closes by growing / shrinking the panel (the row follows its
+	-- height). Content is clipped only while it moves, so the cursors can
+	-- poke past the square's edges once it's open.
+	element.Expanded = false
+	local motion = nil
+	function element:SetExpanded(open: boolean)
+		if open == element.Expanded then
+			return
+		end
+		element.Expanded = open
+		-- Completed also fires for a cancelled tween; clearing `motion` first
+		-- lets its handler (below) see it was replaced and do nothing.
+		local previous = motion
+		motion = nil
+		if previous then
+			previous:Cancel()
+		end
+		panel.ClipsDescendants = true
+		panel.Visible = true
+		if open then
+			motion = TweenService:Create(panel, Motion.Emphasized(Motion.Duration.Medium2), { Size = UDim2.new(1, 0, 0, panelHeight) })
+		else
+			motion = TweenService:Create(panel, Motion.Emphasized(Motion.Duration.Short4), { Size = UDim2.new(1, 0, 0, 0) })
+		end
+		local thisMotion = motion
+		motion.Completed:Once(function()
+			if motion ~= thisMotion then
+				return
+			end
+			motion = nil
+			panel.ClipsDescendants = false
+			panel.Visible = element.Expanded
+		end)
+		motion:Play()
+	end
+
+	-- Only a press that started on the header toggles it: taps on the open
+	-- picker's gaps shouldn't fold it away under your finger.
+	local pressedHeader = false
+	element._maid:GiveTask(row.Frame.InputBegan:Connect(function(input)
+		if isPress(input) then
+			pressedHeader = onHeader(input)
+		end
+	end))
 	element._maid:GiveTask(row.Frame.Activated:Connect(function()
-		panel.Visible = not panel.Visible
+		if pressedHeader then
+			element:SetExpanded(not element.Expanded)
+		end
+		pressedHeader = false
 	end))
 
 	local dragging = nil
