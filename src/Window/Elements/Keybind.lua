@@ -6,6 +6,7 @@
 		Flag = "DashKey",
 		Callback = function(...) end,
 		ChangedCallback = function(newKey) end, -- when the user rebinds
+		Notify = nil,               -- toast when used; default: on for Press / Toggle, off for Hold
 	})
 
 	Click the chip, then press a key. Esc cancels, Backspace unbinds.
@@ -110,6 +111,29 @@ return function(container, props)
 		end
 	end
 
+	-- Toast telling the player what the key just did. Hold keys stay quiet
+	-- by default (you see the effect while holding). A new toast replaces
+	-- this keybind's previous one, so repeated presses don't pile up.
+	local notify = props.Notify
+	if notify == nil then
+		notify = mode ~= "Hold"
+	end
+	local toast = nil
+	local function announce(content: string, icon: string)
+		if not notify or not window:GetKeybindNotify() then
+			return
+		end
+		if toast then
+			toast.Close()
+		end
+		local title = element._title and element._title.Text or "Keybind"
+		toast = window:Notify({ Title = title, Content = `{content} ({element.Value.Name})`, Icon = icon, Duration = 2 })
+	end
+
+	function element:SetNotify(enabled: boolean)
+		notify = enabled
+	end
+
 	local function setListening(value: boolean)
 		listening = value
 		window._keybindListening = value
@@ -147,11 +171,14 @@ return function(container, props)
 			if mode == "Toggle" then
 				setState(not element.State)
 				fire(element.State)
+				announce(if element.State then "Enabled" else "Disabled", if element.State then "toggle_on" else "toggle_off")
 			elseif mode == "Hold" then
 				setState(true)
 				fire(true)
+				announce("Holding", "keyboard")
 			else
 				fire()
+				announce("Activated", "keyboard")
 			end
 		end
 	end))
