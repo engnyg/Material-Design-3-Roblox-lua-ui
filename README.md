@@ -35,7 +35,7 @@ Combat:AddToggle({
 Combat:AddSlider({ Title = "WalkSpeed", Min = 16, Max = 200, Default = 16, Step = 1, Flag = "WS",
     Callback = function(v) game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v end })
 
-Window:AddSettingsTab()      -- 內建設定頁：深色模式、主題色、圖標樣式、切換鍵、設定檔存讀
+Window:AddSettingsTab()      -- 內建設定頁：深色模式、主題色、圖標樣式、主題編輯器、切換鍵、設定檔存讀
 Window:LoadAutoloadConfig()  -- 放在腳本最後，載入「自動載入」設定檔
 
 Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Icon = "check_circle" })
@@ -54,6 +54,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 - **外部圖片**：所有 `Icon` / `Logo` / 通知的 `Image` 都可以直接填網址，會自動下載並透過 `getcustomasset` 載入（見下方「載入外部圖片」）。
 - **設定檔**：`Window:SaveConfig(name)` / `LoadConfig(name)` / `ListConfigs()` / `DeleteConfig(name)` / `SetAutoLoad(name)`，存成 JSON（Color3、KeyCode 會自動序列化）。
 - **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetSeedColor(color)`，整個視窗立即重新上色。
+- **主題編輯器**：設定頁內建，可以單獨改每個顏色（含圖標顏色），見下方「主題編輯器」。
 - **Callback 錯誤不會弄壞 UI**：所有 Callback 都在 `xpcall` 中執行，錯誤只會 `warn` 出來。
 - `Window.OnUnload:Connect(fn)`：UI 被卸載時停止你的迴圈／連線。
 
@@ -61,7 +62,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 | 方法 | 主要參數 | 值（`.Value` / Callback 參數） |
 | --- | --- | --- |
-| `AddButton` | `Title`、`Description`、`Icon`、`Callback` | —（`:Fire()` 手動觸發） |
+| `AddButton` | `Title`、`Description`、`Icon`、`IconColor`、`Callback` | —（`:Fire()` 手動觸發） |
 | `AddToggle` | `Default`、`Flag`、`Callback` | `boolean` |
 | `AddSlider` | `Min`、`Max`、`Step`、`Default`、`Suffix` | `number`（右側數值可直接輸入） |
 | `AddInput` | `Placeholder`、`Default`、`Numeric`、`Finished`、`ClearOnSubmit` | `string` |
@@ -74,7 +75,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
-`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
 
 ### 載入外部圖片（`MD3.Assets`）
 
@@ -86,14 +87,49 @@ imageLabel.Image = MD3.Assets.Resolve("https://raw.githubusercontent.com/<你>/<
 
 -- MD3 的 Icon / Logo 參數都會自動經過 Assets.Resolve
 local Window = MD3:CreateWindow({ Title = "My Hub", Logo = "https://.../logo.png" })
-Window:AddTab({ Title = "Combat", Icon = "https://.../sword.png" }) -- 圖片分頁圖示（會套主題色）
+Window:AddTab({ Title = "Combat", Icon = "https://.../sword.png" }) -- 圖片分頁圖示（會套主題色，圖片必須是白色）
 Window:Notify({ Title = "Hi", Image = "https://.../avatar.png" })      -- 彩色圖片（不套色）
 MD3.Button.new({ Text = "Go", Icon = "https://.../go.png" })
 
 MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭先背景下載
 ```
 
+> **`Icon` 圖片要用白色的。** `Icon` 會用 `ImageColor3` 套上主題色，而 `ImageColor3` 是「相乘」：白色 × 主題色 = 主題色，但黑色 × 任何顏色還是黑色。Google 官方 repo 的 PNG 圖標都是黑色的，直接拿來當 `Icon` 會一直是黑的——請改用白色版本（例如 [`assets/examples/extension.png`](assets/examples/extension.png)），或直接用 Material 圖標名稱（`Icon = "home"`）。彩色圖片請放 `Logo`／通知的 `Image`，這兩個不套色。
+
 `Assets.Resolve` 接受：網址（`http(s)://`）、`rbxassetid://…`／`rbxasset://…`／`rbxthumb://…`、純數字 ID（`123456` → `rbxassetid://123456`）、或 workspace 內已有的檔案路徑（`"MyHub/icon.png"`）。下載失敗（例如拿到 GitHub 的 404 HTML 頁）或 executor 不支援 `getcustomasset` 時回傳 `""`（不顯示圖片），不會丟錯。GitHub 圖片請用 `raw.githubusercontent.com/...` 或 `github.com/.../blob/main/xxx.png?raw=true` 這種直接下載的網址。
+
+### 主題編輯器
+
+`Window:AddSettingsTab()` 的設定頁裡有「Theme editor」區塊（也可以用 `Window:AddThemeEditor(tab)` 放進你自己的分頁；不給參數會另開一個「Theme」分頁）：
+
+- **Preset**：快速套用預設配色（Baseline／Blue／Teal／Green／Yellow／Orange／Red／Pink），等於換主題色（種子色）。
+- **每個顏色一個選色器**：Primary、Secondary、Tertiary、Selection（選取底色）、Background、Content panel、Rows、Text、Secondary text、Outline、**Icons**（一般圖標）、**Accent icons**（標題列／通知圖標）、**Selected tab icon**（選中分頁的圖標）、Error。改過的顏色會標「custom」。
+- **Reset custom colors**：清掉自訂顏色，回到由主題色自動生成的配色。
+- **Copy theme**／**Import theme**：把主題（主題色、深淺模式、自訂顏色）複製成 JSON 分享，或貼上 JSON 匯入。
+
+自訂顏色是疊在主題色生成的配色之上的「覆寫」：換主題色或切換深淺色時，沒改過的顏色會跟著變，改過的保持不變；改了某個底色（例如 Primary、Background）而沒另外指定它上面的文字色時，文字色會自動選黑或白以保持可讀。自訂顏色會存進設定檔（Flag `MD3_ThemeOverrides`）。
+
+程式裡也能直接用：
+
+```lua
+local theme = Window.Theme
+theme:SetOverride("Primary", Color3.fromRGB(255, 80, 80))  -- 固定某個顏色角色
+theme:SetOverride("Icon", Color3.fromRGB(255, 200, 0))     -- 所有一般圖標改成黃色
+theme:SetOverride("Primary", nil)                          -- 還原成自動生成
+theme:ClearOverrides()
+local data = theme:Export()   -- { Seed = "6750a4", Mode = "Dark", Overrides = { Icon = "ffc800" } }
+theme:Import(data)
+```
+
+**單一圖標的顏色**：`IconColor` 可以填主題色角色名稱（會跟著主題變）或固定的 `Color3`：
+
+```lua
+Window:AddTab({ Title = "Combat", Icon = "bolt", IconColor = Color3.fromRGB(255, 200, 0) })
+Main:AddButton({ Title = "Delete", Icon = "delete", IconColor = "Error" })
+Window:Notify({ Title = "Saved", Icon = "save", IconColor = "Tertiary" })
+MD3:CreateWindow({ Title = "My Hub", Icon = "widgets", IconColor = "Tertiary" }) -- 標題列圖標
+tab:SetIconColor(nil) -- 分頁圖標改回跟著主題
+```
 
 ### Executor 環境工具（`MD3.Env`）
 

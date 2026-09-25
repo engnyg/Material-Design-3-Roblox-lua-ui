@@ -105,8 +105,9 @@ end
 
 -- An icon: either an image (URL / rbxassetid / workspace file, loaded via
 -- Assets) as an ImageLabel, or a Material icon name as a glyph TextLabel.
--- Hidden when it can't be drawn. `role` tints it with a theme color; pass
--- tint = false to keep a colored image (e.g. a logo) as-is.
+-- Hidden when it can't be drawn. `role` tints it: a theme color role name
+-- ("Icon", "Primary", ...) or a fixed Color3. Pass tint = false to keep a
+-- colored image (e.g. a logo) as-is.
 function Base.Glyph(themer, name, size: number, role, parent: Instance?, tint: boolean?)
 	if Assets.IsImage(name) then
 		local image = Create("ImageLabel") {

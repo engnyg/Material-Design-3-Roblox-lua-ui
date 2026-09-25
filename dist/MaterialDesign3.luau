@@ -136,6 +136,7 @@ function Button.new(props)
 	self._padding = padding
 
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -710,6 +711,7 @@ function Chip.new(props)
 		Parent = content,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -932,8 +934,12 @@ function Dialog.new(props)
 		ZIndex = props.ZIndex or 100,
 	}
 
-	local card = Create("Frame") {
+	-- A TextButton (not a Frame) so clicks on the card are caught here and
+	-- don't fall through to the scrim, which dismisses the dialog.
+	local card = Create("TextButton") {
 		Name = "Card",
+		AutoButtonColor = false,
+		Text = "",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = props.Size or UDim2.new(0, 320, 0, 0),
@@ -951,26 +957,12 @@ function Dialog.new(props)
 		Parent = card,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 16),
 		Parent = card,
 	}
 	self._card = card
-
-	-- Blocks clicks inside the card from falling through to the scrim button
-	-- behind it. Added first so later content (buttons, etc.) still sits on
-	-- top for hit-testing.
-	if props.DismissOnScrimClick ~= false then
-		Create("TextButton") {
-			Name = "CardCatcher",
-			AutoButtonColor = false,
-			Text = "",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			ZIndex = card.ZIndex,
-			Parent = card,
-		}
-	end
 
 	local title = Create("TextLabel") {
 		Name = "Title",
@@ -1012,17 +1004,19 @@ function Dialog.new(props)
 		Parent = card,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 		Padding = UDim.new(0, 8),
 		Parent = actionsRow,
 	}
 
-	for _, action in ipairs(props.Actions or {}) do
+	for index, action in ipairs(props.Actions or {}) do
 		local btn = Button.new({
 			Text = action.Text,
 			Variant = action.Variant or "Text",
 			Theme = self._theme,
+			LayoutOrder = index,
 			Parent = actionsRow,
 		})
 		btn.Instance.ZIndex = card.ZIndex
@@ -1226,6 +1220,7 @@ function FAB.new(props)
 	}
 
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -1591,6 +1586,7 @@ function NavigationBar.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -1618,6 +1614,7 @@ function NavigationBar.new(props)
 			Parent = item,
 		}
 		Create("UIListLayout") {
+			SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			Padding = UDim.new(0, 4),
@@ -2157,14 +2154,16 @@ function RadioButton.Group(options, initialValue, parent, theme)
 	group._buttons = {}
 	group.Value = initialValue
 
-	for _, option in ipairs(options) do
+	for index, option in ipairs(options) do
 		local row = Create("Frame") {
 			Name = "Option",
+			LayoutOrder = index,
 			BackgroundTransparency = 1,
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Size = UDim2.new(1, 0, 0, 0),
 			Parent = parent,
 			[1] = Create("UIListLayout") {
+				SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 				FillDirection = Enum.FillDirection.Horizontal,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				Padding = UDim.new(0, 4),
@@ -2174,6 +2173,7 @@ function RadioButton.Group(options, initialValue, parent, theme)
 		local radio = RadioButton.new({
 			Theme = theme,
 			Selected = option.Value == initialValue,
+			LayoutOrder = 1,
 			Parent = row,
 		})
 
@@ -2186,6 +2186,7 @@ function RadioButton.Group(options, initialValue, parent, theme)
 				Size = UDim2.new(0, 0, 1, 0),
 				Text = option.Text,
 				TextColor3 = (theme or Theme.Default()).Colors.OnSurface,
+				LayoutOrder = 2,
 				Parent = row,
 			}
 			Typography.Apply(label, "BodyLarge")
@@ -2517,6 +2518,7 @@ function Snackbar.new(props)
 		Parent = root,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 8),
@@ -2531,6 +2533,7 @@ function Snackbar.new(props)
 		Text = "",
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = root.ZIndex,
+		LayoutOrder = 1,
 		Parent = root,
 	}
 	Typography.Apply(label, "BodyMedium")
@@ -2576,6 +2579,7 @@ function Snackbar:Show(message: string, action, duration: number?)
 			Text = action.Text,
 			Variant = "Text",
 			Theme = self._theme,
+			LayoutOrder = 2,
 			Parent = self.Instance,
 		})
 		self._actionButton.Instance.ZIndex = self.Instance.ZIndex
@@ -2879,6 +2883,7 @@ function TextField.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 4),
 		Parent = root,
@@ -3124,6 +3129,7 @@ function TopAppBar.new(props)
 		Parent = root,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 4),
@@ -4349,12 +4355,64 @@ local function buildScheme(p, isDark: boolean)
 	}
 end
 
+-- Roles whose "On" color (text/icons drawn on top) is recomputed for
+-- contrast when the role is overridden but its On role isn't.
+local ON_PAIRS = {
+	Primary = "OnPrimary",
+	PrimaryContainer = "OnPrimaryContainer",
+	Secondary = "OnSecondary",
+	SecondaryContainer = "OnSecondaryContainer",
+	Tertiary = "OnTertiary",
+	TertiaryContainer = "OnTertiaryContainer",
+	Error = "OnError",
+	ErrorContainer = "OnErrorContainer",
+	Surface = "OnSurface",
+	Background = "OnBackground",
+}
+
+-- Relative luminance (WCAG) of a color, 0..1.
+local function luminance(c: Color3): number
+	local function channel(v)
+		return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
+	end
+	return 0.2126 * channel(c.R) + 0.7152 * channel(c.G) + 0.0722 * channel(c.B)
+end
+
+-- Readable content color for a background: near-black or near-white.
+function Theme:ContrastColor(background: Color3): Color3
+	local N = self._palettes.Neutral
+	return luminance(background) > 0.18 and N:Tone(10) or N:Tone(98)
+end
+
+-- The generated scheme, then the user's overrides on top. Also derives the
+-- icon roles, which default to the M3 roles icons normally use:
+--   Icon         = OnSurfaceVariant      (regular icons)
+--   IconAccent   = Primary               (app icon, notification icons)
+--   IconSelected = OnSecondaryContainer  (the selected navigation item)
+function Theme:_build()
+	local colors = buildScheme(self._palettes, self.Mode == "Dark")
+	local overrides = self._overrides
+	for role, color in overrides do
+		colors[role] = color
+	end
+	for role, onRole in ON_PAIRS do
+		if overrides[role] and not overrides[onRole] then
+			colors[onRole] = self:ContrastColor(colors[role])
+		end
+	end
+	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
+	colors.IconAccent = overrides.IconAccent or colors.Primary
+	colors.IconSelected = overrides.IconSelected or colors.OnSecondaryContainer
+	return colors
+end
+
 function Theme.new(seed: Color3?, mode: string?)
 	local self = setmetatable({}, Theme)
 	self.Seed = seed or DEFAULT_SEED
 	self.Mode = mode or "Light"
 	self._palettes = buildPalettes(self.Seed)
-	self.Colors = buildScheme(self._palettes, self.Mode == "Dark")
+	self._overrides = {}
+	self.Colors = self:_build()
 	self.Changed = Signal.new()
 	return self
 end
@@ -4365,7 +4423,7 @@ function Theme:SetMode(mode: string)
 		return
 	end
 	self.Mode = mode
-	self.Colors = buildScheme(self._palettes, mode == "Dark")
+	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
 
@@ -4376,9 +4434,98 @@ end
 function Theme:SetSeedColor(seed: Color3)
 	self.Seed = seed
 	self._palettes = buildPalettes(seed)
-	self.Colors = buildScheme(self._palettes, self.Mode == "Dark")
+	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
+
+--== Overrides (theme editor) ==--
+
+-- Pins one color role (e.g. "Primary", "Surface", "Icon") to a fixed
+-- color, on top of the seed-generated scheme; nil returns it to generated.
+-- Survives SetSeedColor / SetMode.
+function Theme:SetOverride(role: string, color: Color3?)
+	self._overrides[role] = color
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+-- Replaces all overrides at once ({ [role] = Color3 }).
+function Theme:SetOverrides(overrides: { [string]: Color3 }?)
+	self._overrides = table.clone(overrides or {})
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+function Theme:GetOverrides(): { [string]: Color3 }
+	return table.clone(self._overrides)
+end
+
+function Theme:IsOverridden(role: string): boolean
+	return self._overrides[role] ~= nil
+end
+
+function Theme:ClearOverrides()
+	self:SetOverrides({})
+end
+
+-- Plain table describing the theme (hex strings), e.g. to share as JSON:
+-- { Seed = "6750a4", Mode = "Dark", Overrides = { Primary = "ff0000" } }
+function Theme:Export()
+	local overrides = {}
+	for role, color in self._overrides do
+		overrides[role] = color:ToHex()
+	end
+	return { Seed = self.Seed:ToHex(), Mode = self.Mode, Overrides = overrides }
+end
+
+-- Applies a table made by Export (one Changed event).
+function Theme:Import(data)
+	assert(type(data) == "table", "Theme:Import expects a table from Theme:Export")
+	if data.Seed then
+		self.Seed = Color3.fromHex(data.Seed)
+		self._palettes = buildPalettes(self.Seed)
+	end
+	if data.Mode == "Light" or data.Mode == "Dark" then
+		self.Mode = data.Mode
+	end
+	local overrides = {}
+	for role, hex in data.Overrides or {} do
+		overrides[role] = Color3.fromHex(hex)
+	end
+	self._overrides = overrides
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+-- Color roles worth exposing in an editor, with friendly names.
+Theme.EditableRoles = {
+	{ Role = "Primary", Name = "Primary" },
+	{ Role = "Secondary", Name = "Secondary" },
+	{ Role = "Tertiary", Name = "Tertiary" },
+	{ Role = "SecondaryContainer", Name = "Selection" },
+	{ Role = "Surface", Name = "Background" },
+	{ Role = "SurfaceContainerLow", Name = "Content panel" },
+	{ Role = "SurfaceContainerHigh", Name = "Rows" },
+	{ Role = "OnSurface", Name = "Text" },
+	{ Role = "OnSurfaceVariant", Name = "Secondary text" },
+	{ Role = "Outline", Name = "Outline" },
+	{ Role = "Icon", Name = "Icons" },
+	{ Role = "IconAccent", Name = "Accent icons" },
+	{ Role = "IconSelected", Name = "Selected tab icon" },
+	{ Role = "Error", Name = "Error" },
+}
+
+-- Seed colors for quick theme presets (M3 baseline + common hues).
+Theme.Presets = {
+	{ Name = "Baseline", Seed = "6750A4" },
+	{ Name = "Blue", Seed = "0061A4" },
+	{ Name = "Teal", Seed = "006A6A" },
+	{ Name = "Green", Seed = "006E1C" },
+	{ Name = "Yellow", Seed = "6D5E0F" },
+	{ Name = "Orange", Seed = "8B5000" },
+	{ Name = "Red", Seed = "B3261E" },
+	{ Name = "Pink", Seed = "984061" },
+}
 
 -- Surface tint overlay used to fake elevation (M3 uses a primary-tinted
 -- overlay on top of Surface instead of a pure drop shadow to convey elevation).
@@ -5485,8 +5632,9 @@ end
 
 -- An icon: either an image (URL / rbxassetid / workspace file, loaded via
 -- Assets) as an ImageLabel, or a Material icon name as a glyph TextLabel.
--- Hidden when it can't be drawn. `role` tints it with a theme color; pass
--- tint = false to keep a colored image (e.g. a logo) as-is.
+-- Hidden when it can't be drawn. `role` tints it: a theme color role name
+-- ("Icon", "Primary", ...) or a fixed Color3. Pass tint = false to keep a
+-- colored image (e.g. a logo) as-is.
 function Base.Glyph(themer, name, size: number, role, parent: Instance?, tint: boolean?)
 	if Assets.IsImage(name) then
 		local image = Create("ImageLabel") {
@@ -5749,6 +5897,7 @@ end
 -- Window/Elements/Button.lua
 loaders[newNode("Button", N_Window_Elements)] = function(script, require)
 -- Tab:AddButton({ Title = "Rejoin", Description = "...", Icon = "refresh", Callback = function() end })
+-- IconColor: a theme role ("Error", "Primary", ...) or a Color3; default "Icon".
 local Base = require(script.Parent.Base)
 
 return function(container, props)
@@ -5757,7 +5906,7 @@ return function(container, props)
 	element.Flag = nil -- buttons hold no value to save
 
 	local row = Base.Row(element, props, { ClassName = "TextButton", ControlWidth = 24, ControlHeight = 24 })
-	Base.Glyph(themer, props.Icon or "chevron_right", 24, "OnSurfaceVariant", row.Control)
+	Base.Glyph(themer, props.Icon or "chevron_right", 24, props.IconColor or "Icon", row.Control)
 	Base.Interactive(element, row.Frame)
 
 	element._maid:GiveTask(row.Frame.Activated:Connect(function()
@@ -6114,7 +6263,7 @@ return function(container, props)
 	}
 	Typography.Apply(fieldLabel, "BodyMedium")
 
-	local arrow = Base.Glyph(themer, "expand_more", 20, "OnSurfaceVariant", field)
+	local arrow = Base.Glyph(themer, "expand_more", 20, "Icon", field)
 	arrow.AnchorPoint = Vector2.new(1, 0.5)
 	arrow.Position = UDim2.new(1, -8, 0.5, 0)
 
@@ -6820,6 +6969,7 @@ function Notifier.new(parent: Instance, themer)
 end
 
 -- Notify({ Title = "Saved", Content = "Config written", Icon = "save", Duration = 5 })
+-- IconColor: a theme role or a Color3 (default "IconAccent").
 function Notifier:Notify(props)
 	if type(props) == "string" then
 		props = { Title = props }
@@ -6871,7 +7021,7 @@ function Notifier:Notify(props)
 	local iconName = props.Image or props.Icon or "notifications"
 	local hasIcon = props.Icon ~= false and Base.CanShowIcon(iconName)
 	if hasIcon then
-		local icon = Base.Glyph(themer, iconName, 20, "Primary", card, props.Image == nil)
+		local icon = Base.Glyph(themer, iconName, 20, props.IconColor or "IconAccent", card, props.Image == nil)
 		icon.ZIndex = 51
 		if icon:IsA("ImageLabel") and not icon.Visible then
 			hasIcon = false
@@ -7075,6 +7225,9 @@ function Tab.new(window, props)
 	self._elements = {}
 	self._sections = {}
 	self.Title = props.Title or props.Name or "Tab"
+	-- nil = follow the theme's Icon / IconSelected roles; a role name or a
+	-- Color3 pins the icon color (selected or not).
+	self._iconColor = props.IconColor
 	local themer = window._themer
 	local theme = window.Theme
 
@@ -7172,7 +7325,14 @@ function Tab:_paint()
 	}):Play()
 	local content = active and c.OnSecondaryContainer or c.OnSurfaceVariant
 	self._label.TextColor3 = content
-	Base.SetIconColor(self._icon, content)
+	local iconColor = self._iconColor
+	if typeof(iconColor) == "Color3" then
+		Base.SetIconColor(self._icon, iconColor)
+	elseif type(iconColor) == "string" and c[iconColor] then
+		Base.SetIconColor(self._icon, c[iconColor])
+	else
+		Base.SetIconColor(self._icon, active and c.IconSelected or c.Icon)
+	end
 	self._stateLayer:SetColor(c.OnSurface)
 end
 
@@ -7192,6 +7352,12 @@ function Tab:AddSection(title: string?)
 	return section
 end
 Tab.CreateSection = Tab.AddSection
+
+-- Pins the tab icon's color (theme role name or Color3); nil follows the theme.
+function Tab:SetIconColor(color)
+	self._iconColor = color
+	self:_paint()
+end
 
 function Tab:Select()
 	self._window:SelectTab(self)
@@ -7219,6 +7385,7 @@ loaders[newNode("Themer", N_Window)] = function(script, require)
 --
 --   themer:Bind(frame, { BackgroundColor3 = "SurfaceContainerHigh" })
 --   themer:Bind(label, { TextColor3 = function(c) return c.Primary end })
+--   themer:Bind(label, { TextColor3 = Color3.fromRGB(255, 0, 0) }) -- fixed color
 local Themer = {}
 Themer.__index = Themer
 
@@ -7226,6 +7393,8 @@ local function apply(inst, map, colors)
 	for prop, role in map do
 		if type(role) == "function" then
 			inst[prop] = role(colors)
+		elseif typeof(role) == "Color3" then
+			inst[prop] = role
 		else
 			inst[prop] = colors[role]
 		end
@@ -7301,6 +7470,7 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		Title = "My Hub",
 		Subtitle = "v1.0",
 		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
+		IconColor = nil,                   -- app icon color: theme role or Color3 (default "IconAccent")
 		Logo = "https://.../logo.png",     -- colored image shown instead of Icon (not tinted)
 		Size = UDim2.fromOffset(600, 420),
 		Mode = "Dark",                     -- "Light" | "Dark"
@@ -7317,6 +7487,7 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 
 	Window:Notify({ Title = "Loaded", Content = "Press RightShift to hide", Icon = "check_circle" })
 ]]
+local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -7519,7 +7690,7 @@ function Window.new(props)
 	local appIconSource = props.Logo or props.Icon
 	local hasAppIcon = appIconSource ~= nil and Base.CanShowIcon(appIconSource)
 	if hasAppIcon then
-		local appIcon = Base.Glyph(themer, appIconSource, 24, "Primary", topBar, props.Logo == nil)
+		local appIcon = Base.Glyph(themer, appIconSource, 24, props.IconColor or "IconAccent", topBar, props.Logo == nil)
 		appIcon.AnchorPoint = Vector2.new(0, 0.5)
 		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
 		-- A glyph may still be waiting for the icon images; a failed image won't come back.
@@ -7597,7 +7768,7 @@ function Window.new(props)
 			Parent = actions,
 		}
 		Shape.Corner(Shape.Full, button)
-		local glyph = Base.Glyph(themer, iconName, 20, "OnSurfaceVariant", button)
+		local glyph = Base.Glyph(themer, iconName, 20, "Icon", button)
 		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
 		glyph.Position = UDim2.fromScale(0.5, 0.5)
 		local layer = StateLayer.new(button, self.Theme.Colors.OnSurfaceVariant, Shape.Full)
@@ -8013,7 +8184,7 @@ function Window:AddSettingsTab(props)
 	local tab = self:AddTab({ Title = props.Title or "Settings", Icon = props.Icon or "settings" })
 
 	local appearance = tab:AddSection("Appearance")
-	appearance:AddToggle({
+	local darkMode = appearance:AddToggle({
 		Title = "Dark mode",
 		Default = self.Theme.Mode == "Dark",
 		Flag = "MD3_DarkMode",
@@ -8021,7 +8192,7 @@ function Window:AddSettingsTab(props)
 			self.Theme:SetMode(on and "Dark" or "Light")
 		end,
 	})
-	appearance:AddColorPicker({
+	local accent = appearance:AddColorPicker({
 		Title = "Accent color",
 		Description = "Seed color the whole palette is generated from",
 		Default = self.Theme.Seed,
@@ -8053,6 +8224,19 @@ function Window:AddSettingsTab(props)
 			end,
 		})
 	end
+
+	-- Keep these two in sync when the theme changes elsewhere (theme editor
+	-- presets, imports, config loads).
+	self._maid:GiveTask(self.Theme.Changed:Connect(function(theme)
+		if darkMode.Value ~= (theme.Mode == "Dark") then
+			darkMode:Set(theme.Mode == "Dark", true)
+		end
+		if accent.Value ~= theme.Seed then
+			accent:Set(theme.Seed, true)
+		end
+	end))
+
+	self:AddThemeEditor(tab)
 
 	local interface = tab:AddSection("Interface")
 	interface:AddKeybind({
@@ -8141,6 +8325,123 @@ function Window:AddSettingsTab(props)
 	end
 
 	return tab
+end
+
+--== Theme editor ==--
+
+-- Adds a theme editor to `container` (a Tab or Section; default: a new
+-- "Theme" tab): palette presets, a color picker for each editable color
+-- role (Theme.EditableRoles, icon colors included), reset, and copy /
+-- import as JSON. Custom colors are theme overrides on top of the seed
+-- palette, saved in configs under the flag MD3_ThemeOverrides.
+function Window:AddThemeEditor(container)
+	local theme = self.Theme
+	container = container or self:AddTab({ Title = "Theme", Icon = "palette" })
+	local section = if container.AddSection then container:AddSection("Theme editor") else container
+
+	local presetNames = {}
+	for _, preset in Theme.Presets do
+		table.insert(presetNames, preset.Name)
+	end
+	section:AddDropdown({
+		Title = "Preset",
+		Description = "Base palette (custom colors below are kept)",
+		Options = presetNames,
+		Callback = function(name)
+			for _, preset in Theme.Presets do
+				if preset.Name == name then
+					theme:SetSeedColor(Color3.fromHex(preset.Seed))
+				end
+			end
+		end,
+	})
+
+	-- One picker per color role. `editing` stops the picker being dragged
+	-- from being reset by the Changed event its own edit causes.
+	local pickers = {}
+	local editing = nil
+	for _, entry in Theme.EditableRoles do
+		local role = entry.Role
+		pickers[role] = section:AddColorPicker({
+			Title = entry.Name,
+			Description = role,
+			Default = theme.Colors[role],
+			Callback = function(color)
+				editing = role
+				theme:SetOverride(role, color)
+				editing = nil
+			end,
+		})
+	end
+
+	local function refresh()
+		for role, picker in pickers do
+			local color = theme.Colors[role]
+			if role ~= editing and picker.Value ~= color then
+				picker:Set(color, true)
+			end
+			picker:SetDescription(if theme:IsOverridden(role) then `{role} · custom` else role)
+		end
+	end
+	refresh()
+	self._maid:GiveTask(theme.Changed:Connect(refresh))
+
+	section:AddButton({
+		Title = "Reset custom colors",
+		Description = "Back to the colors generated from the accent color",
+		Icon = "refresh",
+		Callback = function()
+			theme:ClearOverrides()
+			self:Notify({ Title = "Custom colors cleared", Icon = "refresh", Duration = 3 })
+		end,
+	})
+	section:AddButton({
+		Title = "Copy theme",
+		Description = "Copies the theme as JSON to share or back up",
+		Icon = "content_copy",
+		Callback = function()
+			local json = HttpService:JSONEncode(theme:Export())
+			if Env.SetClipboard(json) then
+				self:Notify({ Title = "Theme copied", Icon = "content_copy", Duration = 3 })
+			else
+				self:Notify({ Title = "Clipboard unavailable", Content = json, Icon = "error", Duration = 10 })
+			end
+		end,
+	})
+	section:AddInput({
+		Title = "Import theme",
+		Placeholder = "Paste theme JSON",
+		ClearOnSubmit = true,
+		Callback = function(text)
+			if text == "" then
+				return
+			end
+			local ok, data = pcall(HttpService.JSONDecode, HttpService, text)
+			local imported = ok and pcall(theme.Import, theme, data)
+			self:Notify({
+				Title = if imported then "Theme imported" else "Invalid theme JSON",
+				Icon = if imported then "palette" else "error",
+				Duration = 3,
+			})
+		end,
+	})
+
+	-- Overrides go into configs as one flag (saving every picker would pin
+	-- generated colors too and stop them following the accent color).
+	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = theme:GetOverrides() }
+	function overridesFlag:Set(value)
+		theme:SetOverrides(if type(value) == "table" then value else {})
+	end
+	function overridesFlag:Get()
+		return theme:GetOverrides()
+	end
+	function overridesFlag:Destroy() end
+	self.Flags.MD3_ThemeOverrides = overridesFlag
+	self._maid:GiveTask(theme.Changed:Connect(function()
+		overridesFlag.Value = theme:GetOverrides()
+	end))
+
+	return section
 end
 
 --== Teardown ==--

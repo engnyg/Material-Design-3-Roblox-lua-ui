@@ -47,6 +47,7 @@ function NavigationBar.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
@@ -74,6 +75,7 @@ function NavigationBar.new(props)
 			Parent = item,
 		}
 		Create("UIListLayout") {
+			SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
 			Padding = UDim.new(0, 4),

@@ -275,10 +275,13 @@ InstanceMeta.methods = {
 	GetFocusedTextBox = function() return nil end,
 }
 
+-- Every instance created, so tests can inspect everything the library built.
+MOCK_INSTANCES = {}
+
 Instance = {}
 function Instance.new(className)
 	debugCounter += 1
-	return setmetatable({
+	local inst = setmetatable({
 		_props = {
 			ClassName = className,
 			Name = className,
@@ -298,6 +301,8 @@ function Instance.new(className)
 		_propSignals = {},
 		_debugId = tostring(debugCounter),
 	}, InstanceMeta)
+	table.insert(MOCK_INSTANCES, inst)
+	return inst
 end
 
 -- Tweens apply their goals instantly, but (like real Roblox) Completed only

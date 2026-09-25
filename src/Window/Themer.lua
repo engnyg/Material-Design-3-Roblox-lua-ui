@@ -3,6 +3,7 @@
 --
 --   themer:Bind(frame, { BackgroundColor3 = "SurfaceContainerHigh" })
 --   themer:Bind(label, { TextColor3 = function(c) return c.Primary end })
+--   themer:Bind(label, { TextColor3 = Color3.fromRGB(255, 0, 0) }) -- fixed color
 local Themer = {}
 Themer.__index = Themer
 
@@ -10,6 +11,8 @@ local function apply(inst, map, colors)
 	for prop, role in map do
 		if type(role) == "function" then
 			inst[prop] = role(colors)
+		elseif typeof(role) == "Color3" then
+			inst[prop] = role
 		else
 			inst[prop] = colors[role]
 		end

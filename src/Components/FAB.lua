@@ -62,6 +62,7 @@ function FAB.new(props)
 	}
 
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,

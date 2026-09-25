@@ -93,6 +93,7 @@ Misc:AddButton({
 	Title = "Rejoin",
 	Description = "Teleport back into this server",
 	Icon = "refresh",
+	IconColor = "Tertiary", -- per-icon color: a theme role, or a Color3
 	Callback = function()
 		game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
 	end,
@@ -108,11 +109,13 @@ Misc:AddButton({
 
 --== Elements tab: one of everything ==--
 -- Icon / Logo / Image props also take image URLs: downloaded once, then
--- loaded through getcustomasset (see MD3.Assets). Monochrome icons like this
--- one get tinted with the theme color.
+-- loaded through getcustomasset (see MD3.Assets). Icon images get tinted with
+-- the theme color, so they must be WHITE: ImageColor3 multiplies, and black
+-- stays black whatever the tint (Google's own PNGs are black - use Logo /
+-- Image for colored images, which aren't tinted).
 local Demo = Window:AddTab({
 	Title = "Elements",
-	Icon = "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/extension/materialicons/48dp/2x/baseline_extension_black_48dp.png",
+	Icon = "https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/assets/examples/extension.png",
 })
 
 Demo:AddParagraph({
@@ -206,7 +209,7 @@ Demo:AddButton({
 	end,
 })
 
---== Settings tab (theme / accent / toggle key / configs) ==--
+--== Settings tab (theme / accent / theme editor / toggle key / configs) ==--
 Window:AddSettingsTab()
 
 -- Stop everything this script started when the UI is unloaded.

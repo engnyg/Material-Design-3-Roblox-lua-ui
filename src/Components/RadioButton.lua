@@ -170,14 +170,16 @@ function RadioButton.Group(options, initialValue, parent, theme)
 	group._buttons = {}
 	group.Value = initialValue
 
-	for _, option in ipairs(options) do
+	for index, option in ipairs(options) do
 		local row = Create("Frame") {
 			Name = "Option",
+			LayoutOrder = index,
 			BackgroundTransparency = 1,
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Size = UDim2.new(1, 0, 0, 0),
 			Parent = parent,
 			[1] = Create("UIListLayout") {
+				SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 				FillDirection = Enum.FillDirection.Horizontal,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				Padding = UDim.new(0, 4),
@@ -187,6 +189,7 @@ function RadioButton.Group(options, initialValue, parent, theme)
 		local radio = RadioButton.new({
 			Theme = theme,
 			Selected = option.Value == initialValue,
+			LayoutOrder = 1,
 			Parent = row,
 		})
 
@@ -199,6 +202,7 @@ function RadioButton.Group(options, initialValue, parent, theme)
 				Size = UDim2.new(0, 0, 1, 0),
 				Text = option.Text,
 				TextColor3 = (theme or Theme.Default()).Colors.OnSurface,
+				LayoutOrder = 2,
 				Parent = row,
 			}
 			Typography.Apply(label, "BodyLarge")

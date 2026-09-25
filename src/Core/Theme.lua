@@ -118,12 +118,64 @@ local function buildScheme(p, isDark: boolean)
 	}
 end
 
+-- Roles whose "On" color (text/icons drawn on top) is recomputed for
+-- contrast when the role is overridden but its On role isn't.
+local ON_PAIRS = {
+	Primary = "OnPrimary",
+	PrimaryContainer = "OnPrimaryContainer",
+	Secondary = "OnSecondary",
+	SecondaryContainer = "OnSecondaryContainer",
+	Tertiary = "OnTertiary",
+	TertiaryContainer = "OnTertiaryContainer",
+	Error = "OnError",
+	ErrorContainer = "OnErrorContainer",
+	Surface = "OnSurface",
+	Background = "OnBackground",
+}
+
+-- Relative luminance (WCAG) of a color, 0..1.
+local function luminance(c: Color3): number
+	local function channel(v)
+		return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
+	end
+	return 0.2126 * channel(c.R) + 0.7152 * channel(c.G) + 0.0722 * channel(c.B)
+end
+
+-- Readable content color for a background: near-black or near-white.
+function Theme:ContrastColor(background: Color3): Color3
+	local N = self._palettes.Neutral
+	return luminance(background) > 0.18 and N:Tone(10) or N:Tone(98)
+end
+
+-- The generated scheme, then the user's overrides on top. Also derives the
+-- icon roles, which default to the M3 roles icons normally use:
+--   Icon         = OnSurfaceVariant      (regular icons)
+--   IconAccent   = Primary               (app icon, notification icons)
+--   IconSelected = OnSecondaryContainer  (the selected navigation item)
+function Theme:_build()
+	local colors = buildScheme(self._palettes, self.Mode == "Dark")
+	local overrides = self._overrides
+	for role, color in overrides do
+		colors[role] = color
+	end
+	for role, onRole in ON_PAIRS do
+		if overrides[role] and not overrides[onRole] then
+			colors[onRole] = self:ContrastColor(colors[role])
+		end
+	end
+	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
+	colors.IconAccent = overrides.IconAccent or colors.Primary
+	colors.IconSelected = overrides.IconSelected or colors.OnSecondaryContainer
+	return colors
+end
+
 function Theme.new(seed: Color3?, mode: string?)
 	local self = setmetatable({}, Theme)
 	self.Seed = seed or DEFAULT_SEED
 	self.Mode = mode or "Light"
 	self._palettes = buildPalettes(self.Seed)
-	self.Colors = buildScheme(self._palettes, self.Mode == "Dark")
+	self._overrides = {}
+	self.Colors = self:_build()
 	self.Changed = Signal.new()
 	return self
 end
@@ -134,7 +186,7 @@ function Theme:SetMode(mode: string)
 		return
 	end
 	self.Mode = mode
-	self.Colors = buildScheme(self._palettes, mode == "Dark")
+	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
 
@@ -145,9 +197,98 @@ end
 function Theme:SetSeedColor(seed: Color3)
 	self.Seed = seed
 	self._palettes = buildPalettes(seed)
-	self.Colors = buildScheme(self._palettes, self.Mode == "Dark")
+	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
+
+--== Overrides (theme editor) ==--
+
+-- Pins one color role (e.g. "Primary", "Surface", "Icon") to a fixed
+-- color, on top of the seed-generated scheme; nil returns it to generated.
+-- Survives SetSeedColor / SetMode.
+function Theme:SetOverride(role: string, color: Color3?)
+	self._overrides[role] = color
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+-- Replaces all overrides at once ({ [role] = Color3 }).
+function Theme:SetOverrides(overrides: { [string]: Color3 }?)
+	self._overrides = table.clone(overrides or {})
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+function Theme:GetOverrides(): { [string]: Color3 }
+	return table.clone(self._overrides)
+end
+
+function Theme:IsOverridden(role: string): boolean
+	return self._overrides[role] ~= nil
+end
+
+function Theme:ClearOverrides()
+	self:SetOverrides({})
+end
+
+-- Plain table describing the theme (hex strings), e.g. to share as JSON:
+-- { Seed = "6750a4", Mode = "Dark", Overrides = { Primary = "ff0000" } }
+function Theme:Export()
+	local overrides = {}
+	for role, color in self._overrides do
+		overrides[role] = color:ToHex()
+	end
+	return { Seed = self.Seed:ToHex(), Mode = self.Mode, Overrides = overrides }
+end
+
+-- Applies a table made by Export (one Changed event).
+function Theme:Import(data)
+	assert(type(data) == "table", "Theme:Import expects a table from Theme:Export")
+	if data.Seed then
+		self.Seed = Color3.fromHex(data.Seed)
+		self._palettes = buildPalettes(self.Seed)
+	end
+	if data.Mode == "Light" or data.Mode == "Dark" then
+		self.Mode = data.Mode
+	end
+	local overrides = {}
+	for role, hex in data.Overrides or {} do
+		overrides[role] = Color3.fromHex(hex)
+	end
+	self._overrides = overrides
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+-- Color roles worth exposing in an editor, with friendly names.
+Theme.EditableRoles = {
+	{ Role = "Primary", Name = "Primary" },
+	{ Role = "Secondary", Name = "Secondary" },
+	{ Role = "Tertiary", Name = "Tertiary" },
+	{ Role = "SecondaryContainer", Name = "Selection" },
+	{ Role = "Surface", Name = "Background" },
+	{ Role = "SurfaceContainerLow", Name = "Content panel" },
+	{ Role = "SurfaceContainerHigh", Name = "Rows" },
+	{ Role = "OnSurface", Name = "Text" },
+	{ Role = "OnSurfaceVariant", Name = "Secondary text" },
+	{ Role = "Outline", Name = "Outline" },
+	{ Role = "Icon", Name = "Icons" },
+	{ Role = "IconAccent", Name = "Accent icons" },
+	{ Role = "IconSelected", Name = "Selected tab icon" },
+	{ Role = "Error", Name = "Error" },
+}
+
+-- Seed colors for quick theme presets (M3 baseline + common hues).
+Theme.Presets = {
+	{ Name = "Baseline", Seed = "6750A4" },
+	{ Name = "Blue", Seed = "0061A4" },
+	{ Name = "Teal", Seed = "006A6A" },
+	{ Name = "Green", Seed = "006E1C" },
+	{ Name = "Yellow", Seed = "6D5E0F" },
+	{ Name = "Orange", Seed = "8B5000" },
+	{ Name = "Red", Seed = "B3261E" },
+	{ Name = "Pink", Seed = "984061" },
+}
 
 -- Surface tint overlay used to fake elevation (M3 uses a primary-tinted
 -- overlay on top of Surface instead of a pure drop shadow to convey elevation).

@@ -5,6 +5,7 @@
 		Title = "My Hub",
 		Subtitle = "v1.0",
 		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
+		IconColor = nil,                   -- app icon color: theme role or Color3 (default "IconAccent")
 		Logo = "https://.../logo.png",     -- colored image shown instead of Icon (not tinted)
 		Size = UDim2.fromOffset(600, 420),
 		Mode = "Dark",                     -- "Light" | "Dark"
@@ -21,6 +22,7 @@
 
 	Window:Notify({ Title = "Loaded", Content = "Press RightShift to hide", Icon = "check_circle" })
 ]]
+local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -223,7 +225,7 @@ function Window.new(props)
 	local appIconSource = props.Logo or props.Icon
 	local hasAppIcon = appIconSource ~= nil and Base.CanShowIcon(appIconSource)
 	if hasAppIcon then
-		local appIcon = Base.Glyph(themer, appIconSource, 24, "Primary", topBar, props.Logo == nil)
+		local appIcon = Base.Glyph(themer, appIconSource, 24, props.IconColor or "IconAccent", topBar, props.Logo == nil)
 		appIcon.AnchorPoint = Vector2.new(0, 0.5)
 		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
 		-- A glyph may still be waiting for the icon images; a failed image won't come back.
@@ -301,7 +303,7 @@ function Window.new(props)
 			Parent = actions,
 		}
 		Shape.Corner(Shape.Full, button)
-		local glyph = Base.Glyph(themer, iconName, 20, "OnSurfaceVariant", button)
+		local glyph = Base.Glyph(themer, iconName, 20, "Icon", button)
 		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
 		glyph.Position = UDim2.fromScale(0.5, 0.5)
 		local layer = StateLayer.new(button, self.Theme.Colors.OnSurfaceVariant, Shape.Full)
@@ -717,7 +719,7 @@ function Window:AddSettingsTab(props)
 	local tab = self:AddTab({ Title = props.Title or "Settings", Icon = props.Icon or "settings" })
 
 	local appearance = tab:AddSection("Appearance")
-	appearance:AddToggle({
+	local darkMode = appearance:AddToggle({
 		Title = "Dark mode",
 		Default = self.Theme.Mode == "Dark",
 		Flag = "MD3_DarkMode",
@@ -725,7 +727,7 @@ function Window:AddSettingsTab(props)
 			self.Theme:SetMode(on and "Dark" or "Light")
 		end,
 	})
-	appearance:AddColorPicker({
+	local accent = appearance:AddColorPicker({
 		Title = "Accent color",
 		Description = "Seed color the whole palette is generated from",
 		Default = self.Theme.Seed,
@@ -757,6 +759,19 @@ function Window:AddSettingsTab(props)
 			end,
 		})
 	end
+
+	-- Keep these two in sync when the theme changes elsewhere (theme editor
+	-- presets, imports, config loads).
+	self._maid:GiveTask(self.Theme.Changed:Connect(function(theme)
+		if darkMode.Value ~= (theme.Mode == "Dark") then
+			darkMode:Set(theme.Mode == "Dark", true)
+		end
+		if accent.Value ~= theme.Seed then
+			accent:Set(theme.Seed, true)
+		end
+	end))
+
+	self:AddThemeEditor(tab)
 
 	local interface = tab:AddSection("Interface")
 	interface:AddKeybind({
@@ -845,6 +860,123 @@ function Window:AddSettingsTab(props)
 	end
 
 	return tab
+end
+
+--== Theme editor ==--
+
+-- Adds a theme editor to `container` (a Tab or Section; default: a new
+-- "Theme" tab): palette presets, a color picker for each editable color
+-- role (Theme.EditableRoles, icon colors included), reset, and copy /
+-- import as JSON. Custom colors are theme overrides on top of the seed
+-- palette, saved in configs under the flag MD3_ThemeOverrides.
+function Window:AddThemeEditor(container)
+	local theme = self.Theme
+	container = container or self:AddTab({ Title = "Theme", Icon = "palette" })
+	local section = if container.AddSection then container:AddSection("Theme editor") else container
+
+	local presetNames = {}
+	for _, preset in Theme.Presets do
+		table.insert(presetNames, preset.Name)
+	end
+	section:AddDropdown({
+		Title = "Preset",
+		Description = "Base palette (custom colors below are kept)",
+		Options = presetNames,
+		Callback = function(name)
+			for _, preset in Theme.Presets do
+				if preset.Name == name then
+					theme:SetSeedColor(Color3.fromHex(preset.Seed))
+				end
+			end
+		end,
+	})
+
+	-- One picker per color role. `editing` stops the picker being dragged
+	-- from being reset by the Changed event its own edit causes.
+	local pickers = {}
+	local editing = nil
+	for _, entry in Theme.EditableRoles do
+		local role = entry.Role
+		pickers[role] = section:AddColorPicker({
+			Title = entry.Name,
+			Description = role,
+			Default = theme.Colors[role],
+			Callback = function(color)
+				editing = role
+				theme:SetOverride(role, color)
+				editing = nil
+			end,
+		})
+	end
+
+	local function refresh()
+		for role, picker in pickers do
+			local color = theme.Colors[role]
+			if role ~= editing and picker.Value ~= color then
+				picker:Set(color, true)
+			end
+			picker:SetDescription(if theme:IsOverridden(role) then `{role} · custom` else role)
+		end
+	end
+	refresh()
+	self._maid:GiveTask(theme.Changed:Connect(refresh))
+
+	section:AddButton({
+		Title = "Reset custom colors",
+		Description = "Back to the colors generated from the accent color",
+		Icon = "refresh",
+		Callback = function()
+			theme:ClearOverrides()
+			self:Notify({ Title = "Custom colors cleared", Icon = "refresh", Duration = 3 })
+		end,
+	})
+	section:AddButton({
+		Title = "Copy theme",
+		Description = "Copies the theme as JSON to share or back up",
+		Icon = "content_copy",
+		Callback = function()
+			local json = HttpService:JSONEncode(theme:Export())
+			if Env.SetClipboard(json) then
+				self:Notify({ Title = "Theme copied", Icon = "content_copy", Duration = 3 })
+			else
+				self:Notify({ Title = "Clipboard unavailable", Content = json, Icon = "error", Duration = 10 })
+			end
+		end,
+	})
+	section:AddInput({
+		Title = "Import theme",
+		Placeholder = "Paste theme JSON",
+		ClearOnSubmit = true,
+		Callback = function(text)
+			if text == "" then
+				return
+			end
+			local ok, data = pcall(HttpService.JSONDecode, HttpService, text)
+			local imported = ok and pcall(theme.Import, theme, data)
+			self:Notify({
+				Title = if imported then "Theme imported" else "Invalid theme JSON",
+				Icon = if imported then "palette" else "error",
+				Duration = 3,
+			})
+		end,
+	})
+
+	-- Overrides go into configs as one flag (saving every picker would pin
+	-- generated colors too and stop them following the accent color).
+	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = theme:GetOverrides() }
+	function overridesFlag:Set(value)
+		theme:SetOverrides(if type(value) == "table" then value else {})
+	end
+	function overridesFlag:Get()
+		return theme:GetOverrides()
+	end
+	function overridesFlag:Destroy() end
+	self.Flags.MD3_ThemeOverrides = overridesFlag
+	self._maid:GiveTask(theme.Changed:Connect(function()
+		overridesFlag.Value = theme:GetOverrides()
+	end))
+
+	return section
 end
 
 --== Teardown ==--

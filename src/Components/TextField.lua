@@ -42,6 +42,7 @@ function TextField.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 	Create("UIListLayout") {
+		SortOrder = Enum.SortOrder.LayoutOrder, -- the default sorts by Name
 		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, 4),
 		Parent = root,
