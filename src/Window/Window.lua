@@ -30,6 +30,10 @@
 	Window:AddWatermark({ FPS = true, Ping = true, Clock = true })
 	Window:AddKeybindList()
 	Window:AddIndicator({ Text = "AUTO", Icon = "bolt" })
+
+	-- Loading screen: on by default; LoadingScreen = false turns it off,
+	-- or { Title, Subtitle, Icon, Duration } customizes it.
+	if not Window.IsLoaded then Window.Loaded:Wait() end -- if you need the window on screen first
 ]]
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
@@ -56,6 +60,7 @@ local Tab = require(script.Parent.Tab)
 local Base = require(script.Parent.Elements.Base)
 local makeDraggable = require(script.Parent.Draggable)
 local HUD = require(script.Parent.HUD)
+local LoadingScreen = require(script.Parent.LoadingScreen)
 
 local TOP_BAR_HEIGHT = 56
 local NAV_WIDTH = 168
@@ -99,6 +104,10 @@ function Window.new(props)
 	self.Visible = true
 	self.Minimized = false
 	self.OnUnload = Signal.new()
+	-- Fires once the loading screen is done and the window is shown (right
+	-- away when there is no loading screen: check IsLoaded before waiting).
+	self.Loaded = Signal.new()
+	self.IsLoaded = false
 	-- Every Keybind element, and a signal fired when one is added, removed,
 	-- rebound or switched on/off (drives the HUD keybind list).
 	self._keybinds = {}
@@ -134,9 +143,13 @@ function Window.new(props)
 	-- background so the window appears immediately; icons start out as
 	-- BuilderIcons / symbols and switch over in place once it's ready. An
 	-- explicit IconStyle always (re)loads; otherwise keep what's loaded.
+	-- The loading screen waits for this.
+	self._iconsReady = true
 	if props.Icons ~= false and props.IconFont ~= false and (props.IconStyle ~= nil or not Icons.GetSheet()) then
+		self._iconsReady = false
 		task.spawn(function()
 			local ok, err = IconImages.Load(props.IconStyle)
+			self._iconsReady = true
 			if not ok and Env.CanUseCustomAssets then
 				warn(`[MD3] could not load the icon images: {err}`)
 			end
@@ -493,6 +506,29 @@ function Window.new(props)
 		self._maid:GiveTask(camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale))
 	end
 
+	--== Loading screen ==--
+	-- On unless the script passes LoadingScreen = false; the player can also
+	-- turn it off from the settings tab (saved in ConfigFolder/loading.txt).
+	self._loadingAllowed = props.LoadingScreen ~= false
+	if self._loadingAllowed and self:GetLoadingScreenEnabled() then
+		self._loading = true
+		main.Visible = false
+		self._loadingScreen = LoadingScreen.Run(self, props.LoadingScreen, function()
+			self._loading = false
+			self._loadingScreen = nil
+			if self._destroyed then
+				return
+			end
+			self.IsLoaded = true
+			if self.Visible then
+				self:SetVisible(true)
+			end
+			self.Loaded:Fire()
+		end)
+	else
+		self.IsLoaded = true
+	end
+
 	return self
 end
 
@@ -585,6 +621,9 @@ end
 
 function Window:SetVisible(visible: boolean)
 	self.Visible = visible
+	if self._loading then
+		return -- applied when the loading screen finishes
+	end
 	local main = self.Instance
 	if visible then
 		main.Visible = true
@@ -598,6 +637,30 @@ end
 
 function Window:Toggle()
 	self:SetVisible(not self.Visible)
+end
+
+-- Ends the loading screen now (e.g. once your own setup is done).
+function Window:SkipLoading()
+	if self._loadingScreen then
+		self._loadingScreen.Finish()
+	end
+end
+
+-- The player's loading-screen preference, used from the next run on
+-- (true unless turned off; always false when the script disabled it).
+function Window:GetLoadingScreenEnabled(): boolean
+	if not self._loadingAllowed then
+		return false
+	end
+	return Env.ReadFile(`{self._configFolder}/loading.txt`) ~= "off"
+end
+
+function Window:SetLoadingScreenEnabled(enabled: boolean): boolean
+	if not Env.CanUseFiles then
+		return false
+	end
+	Env.MakeFolder(self._configFolder)
+	return Env.WriteFile(`{self._configFolder}/loading.txt`, if enabled then "on" else "off")
 end
 
 function Window:Minimize(minimized: boolean?)
@@ -991,6 +1054,17 @@ function Window:AddSettingsTab(props)
 			self:SetToggleKey(key)
 		end,
 	})
+	-- A startup setting, so it's stored outside configs (which load later).
+	if self._loadingAllowed and Env.CanUseFiles then
+		interface:AddToggle({
+			Title = "Loading animation",
+			Description = "Plays when the script starts (from the next run)",
+			Default = self:GetLoadingScreenEnabled(),
+			Callback = function(on)
+				self:SetLoadingScreenEnabled(on)
+			end,
+		})
+	end
 	interface:AddButton({
 		Title = "Reset window size",
 		Description = "Drag the bottom-right corner to resize",
