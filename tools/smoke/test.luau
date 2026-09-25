@@ -193,7 +193,27 @@ check(round ~= nil and round ~= font and files["MD3/MaterialIconsRound-Regular.t
 local sharp = MD3.IconFont.Load("MD3", "Sharp")
 check(sharp ~= nil and files["MD3/MaterialIcons-Regular.ttf"] ~= nil and files["MD3/MaterialIconsSharp-Regular.ttf"] == nil, "IconFont did not fall back to Filled")
 check(select(2, MD3.IconFont.Load("MD3", "Nope")) ~= nil, "unknown icon style should report an error")
+-- Switching styles redraws icons that already exist
+local existing = Instance.new("TextLabel")
+existing.Parent = screen
+MD3.Icons.Apply(existing, "settings")
+check(existing.FontFace == MD3.Icons.GetFont() and existing.Text == utf8.char(0xe8b8), "icon not drawn with the current style")
+MD3.IconFont.Load("MD3", "Round")
+check(existing.FontFace == round and MD3.IconFont.CurrentStyle == "Round", "existing icon did not follow the style switch")
 MD3.IconFont.Load("MD3", "Outlined")
+check(existing.FontFace == font and MD3.IconFont.CurrentStyle == "Outlined", "existing icon did not follow the second switch")
+-- With no icon font at all, it falls back to its own font (not a stale icon font)
+local ownFont = MD3.Typography.Scale.BodyMedium.font
+local plain = Instance.new("TextLabel")
+plain.FontFace = ownFont
+plain.Parent = screen
+MD3.Icons.Apply(plain, "check")
+MD3.Icons.SetBuilderIconsEnabled(false)
+MD3.Icons.SetFont(nil)
+check(plain.Text == "\u{2713}" and plain.FontFace == ownFont, "plain fallback did not restore the label's own font")
+MD3.IconFont.Load("MD3", "Outlined")
+MD3.Icons.SetBuilderIconsEnabled(true)
+check(existing.FontFace == font, "existing icon did not return to the Material font")
 
 -- External images: HttpGet -> writefile -> getcustomasset (cached)
 local Assets = MD3.Assets
@@ -305,6 +325,14 @@ check(dialog.Instance.Visible, "Window:Dialog did not show")
 -- Configs round-trip through the fake file system
 local settings = Window:AddSettingsTab()
 check(Window.Flags.MD3_DarkMode and Window.Flags.MD3_ToggleKey, "settings tab flags missing")
+local styleDropdown = Window.Flags.MD3_IconStyle
+check(styleDropdown and styleDropdown.Value == "Outlined", "settings tab icon style dropdown missing")
+local navIcon = main._icon
+styleDropdown:Set("Round")
+check(MD3.IconFont.CurrentStyle == "Round" and navIcon.FontFace == round, "settings dropdown did not switch the icon style live")
+styleDropdown:Set("Sharp")
+check(MD3.IconFont.CurrentStyle == "Filled" and styleDropdown.Value == "Filled", "failed style switch should show the fallback")
+styleDropdown:Set("Outlined")
 check(Window:SaveConfig("main"), "SaveConfig failed")
 check(table.find(Window:ListConfigs(), "main"), "ListConfigs missing saved config")
 toggle:Set(true)

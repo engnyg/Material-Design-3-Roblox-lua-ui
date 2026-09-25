@@ -550,6 +550,17 @@ function Window:Minimize(minimized: boolean?)
 	end
 end
 
+-- Switches the Material icon style ("Outlined" | "Filled" | "Round" |
+-- "Sharp") live; every icon already on screen is redrawn. Returns the style
+-- actually in use (a failed download falls back to Filled).
+function Window:SetIconStyle(style: string): (string?, string?)
+	local font, err = IconFont.Load("MD3", style)
+	if not font then
+		return nil, err
+	end
+	return IconFont.CurrentStyle
+end
+
 function Window:SetToggleKey(key)
 	self._toggleKey = toKeyCode(key)
 end
@@ -714,6 +725,29 @@ function Window:AddSettingsTab(props)
 			self.Theme:SetSeedColor(color)
 		end,
 	})
+
+	-- Icon style needs file functions + getcustomasset to load the fonts.
+	if Env.CanUseCustomAssets then
+		local iconStyle
+		iconStyle = appearance:AddDropdown({
+			Title = "Icon style",
+			Description = "Material Icons: Outlined is the M3 default",
+			Options = IconFont.StyleNames,
+			Default = IconFont.CurrentStyle or IconFont.DefaultStyle,
+			Flag = "MD3_IconStyle",
+			Callback = function(style)
+				if not style then
+					return
+				end
+				local current, err = self:SetIconStyle(style)
+				if current ~= style then
+					-- Show what's really loaded (e.g. after a fallback to Filled).
+					iconStyle:Set(current or IconFont.CurrentStyle, true)
+					self:Notify({ Title = "Icon style unavailable", Content = err or `Using {current} instead`, Icon = "error" })
+				end
+			end,
+		})
+	end
 
 	local interface = tab:AddSection("Interface")
 	interface:AddKeybind({

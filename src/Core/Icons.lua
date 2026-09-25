@@ -331,9 +331,21 @@ Icons.BuilderFont = BUILDER_FONT
 
 local iconFont: Font? = nil
 
--- Call once at startup after uploading a Material Symbols/Icons font asset.
+-- Every label Icons.Apply has drawn on, so switching the icon font (or
+-- style) at runtime redraws icons that already exist. Strong keys with a
+-- Destroying cleanup rather than weak keys: Roblox may recreate an
+-- Instance's Lua wrapper, which would silently drop weak entries.
+local applied = {} -- label -> icon name
+local labelFonts = {} -- label -> the label's own font, for plain fallbacks
+local cleanups = {}
+
+local reapplyAll
+
+-- Sets the Material icon font (any style) and redraws every icon already
+-- on screen with it.
 function Icons.SetFont(font: Font)
 	iconFont = font
+	reapplyAll()
 end
 
 function Icons.HasFont(): boolean
@@ -350,6 +362,7 @@ local builderEnabled = true
 -- and the plain-character fallbacks.
 function Icons.SetBuilderIconsEnabled(enabled: boolean)
 	builderEnabled = enabled
+	reapplyAll()
 end
 
 -- Resolves `name` to the text to display and the font to display it in
@@ -392,12 +405,37 @@ function Icons.Register(name: string, codepoint: number)
 	CODEPOINTS[name] = codepoint
 end
 
--- Applies the icon glyph + matching font onto a Text object in one call.
-function Icons.Apply(textObject: TextLabel | TextButton, name: string)
+local function draw(textObject, name: string)
 	local text, font = Icons.Resolve(name)
 	textObject.Text = text
-	if font then
-		textObject.FontFace = font
+	textObject.FontFace = font or labelFonts[textObject] or textObject.FontFace
+end
+
+-- Applies the icon glyph + matching font onto a Text object in one call.
+-- The label keeps following later SetFont / style changes.
+function Icons.Apply(textObject: TextLabel | TextButton, name: string)
+	if applied[textObject] == nil then
+		labelFonts[textObject] = textObject.FontFace
+		local ok, connection = pcall(function()
+			return textObject.Destroying:Connect(function()
+				applied[textObject] = nil
+				labelFonts[textObject] = nil
+				cleanups[textObject] = nil
+			end)
+		end)
+		if ok then
+			cleanups[textObject] = connection
+		end
+	end
+	applied[textObject] = name
+	draw(textObject, name)
+end
+
+function reapplyAll()
+	for textObject, name in applied do
+		if textObject.Parent then
+			draw(textObject, name)
+		end
 	end
 end
 

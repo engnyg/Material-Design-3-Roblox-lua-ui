@@ -35,7 +35,7 @@ Combat:AddToggle({
 Combat:AddSlider({ Title = "WalkSpeed", Min = 16, Max = 200, Default = 16, Step = 1, Flag = "WS",
     Callback = function(v) game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v end })
 
-Window:AddSettingsTab()      -- 內建設定頁：深色模式、主題色、切換鍵、設定檔存讀
+Window:AddSettingsTab()      -- 內建設定頁：深色模式、主題色、圖標樣式、切換鍵、設定檔存讀
 Window:LoadAutoloadConfig()  -- 放在腳本最後，載入「自動載入」設定檔
 
 Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Icon = "check_circle" })
@@ -74,7 +74,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
-`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
 
 ### 載入外部圖片（`MD3.Assets`）
 
@@ -215,7 +215,11 @@ end)
 | `"Round"` | 圓角 | 本 repo 的 `assets/fonts/`（~500 KB） |
 | `"Sharp"` | 直角 | 本 repo 的 `assets/fonts/`（~350 KB） |
 
-Google 只提供 Outlined／Round／Sharp 的 `.otf`（CFF 輪廓）版本，為了確保 Roblox 能穩定載入，`assets/fonts/` 裡放的是用 [`tools/convert_icon_fonts.py`](tools/convert_icon_fonts.py) 轉成 TrueType 的同一套字型（字形、字碼、字距不變，驗證過渲染結果與原檔逐像素相同）。如果選的樣式下載失敗，會自動退回 `Filled`。也可以手動切換：`MD3.IconFont.Load("MD3", "Round")`。
+Google 只提供 Outlined／Round／Sharp 的 `.otf`（CFF 輪廓）版本，為了確保 Roblox 能穩定載入，`assets/fonts/` 裡放的是用 [`tools/convert_icon_fonts.py`](tools/convert_icon_fonts.py) 轉成 TrueType 的同一套字型（字形、字碼、字距不變，驗證過渲染結果與原檔逐像素相同）。如果選的樣式下載失敗，會自動退回 `Filled`。
+
+**執行中也能切換**，畫面上已經有的圖標會立刻重畫，不用重建 UI：
+- 內建設定頁（`Window:AddSettingsTab()`）的「Appearance → Icon style」下拉選單，選擇會存進設定檔（Flag `MD3_IconStyle`）。
+- 程式裡：`Window:SetIconStyle("Round")`（回傳實際使用的樣式）或 `MD3.IconFont.Load("MD3", "Round")`；`MD3.IconFont.CurrentStyle` 是目前載入的樣式。
 
 **沒有 Material 字型時**（executor 不支援 `getcustomasset`、或在 Studio 還沒設定字型），圖標會改用 Roblox 客戶端本身就有的 **BuilderIcons** 字型（`rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json`，Roblox App 介面用的那套）。它是連字（ligature）字型——文字 `gear` 會畫成齒輪——`Icons.lua` 內建了 Material 名稱到 BuilderIcons 名稱的對照表（`settings` → `gear`、`close` → `x`…）。也可以直接用任何 BuilderIcons 圖標：`Icon = "builder:sword"`。不想用可以呼叫 `MD3.Icons.SetBuilderIconsEnabled(false)`。優先順序：Material 字型 → BuilderIcons → 簡單符號。
 
