@@ -586,6 +586,105 @@ check(unloaded and Window._destroyed, "re-created window did not replace the old
 second:Destroy()
 check(second.Gui.Parent == nil, "Window:Destroy left the ScreenGui behind")
 
+-- HUD: watermark, keybind list, indicators
+local keyboard = Enum.UserInputType.Keyboard
+local function press(key) uis.InputBegan:Fire({ UserInputType = keyboard, KeyCode = key }, false) end
+local function release(key) uis.InputEnded:Fire({ UserInputType = keyboard, KeyCode = key }) end
+
+local hudWindow = MD3.CreateWindow({ Title = "HUD Hub", Icon = "widgets", Parent = host })
+local hudTab = hudWindow:AddTab({ Title = "Binds" })
+local fly = hudTab:AddKeybind({ Title = "Fly", Default = "F", Mode = "Toggle" })
+hudTab:AddKeybind({ Title = "Sprint", Default = "LeftShift", Mode = "Hold" })
+local dashBind = hudTab:AddKeybind({ Title = "Dash", Default = "Q" })
+hudTab:AddKeybind({ Title = "Unbound", Mode = "Toggle" })
+
+local wm = hudWindow:AddWatermark({ FPS = true, Ping = true, Clock = true })
+local layer = hudWindow._hudLayer
+check(layer ~= nil and layer.Parent == hudWindow.Gui and wm.Instance.Parent == layer, "watermark is not on the HUD layer")
+local blocks = wm._blocks
+check(#blocks == 4 and wm.TitleBlock == blocks[1], "watermark should have title + FPS + ping + clock")
+check(wm.TitleBlock:GetText() == "HUD Hub", "watermark title should default to the window title")
+check(not blocks[1]._separator.Visible and blocks[2]._separator.Visible, "watermark separators wrong")
+check(blocks[2]:GetText() == "-- FPS", "FPS should show -- before the first sample")
+check(blocks[3]:GetText() == "45 ms", `ping block shows {blocks[3]:GetText()}`)
+check(string.match(blocks[4]:GetText(), "^%d%d:%d%d:%d%d$") ~= nil, `clock block shows {blocks[4]:GetText()}`)
+local heartbeat = game:GetService("RunService").Heartbeat
+for _ = 1, 31 do -- 30 × 1/60 lands a hair under the 0.5 s window in floating point
+	heartbeat:Fire(1 / 60)
+end
+check(blocks[2]:GetText() == "60 FPS", `FPS block shows {blocks[2]:GetText()}`)
+
+local blockClicks = 0
+local custom = wm:AddBlock("bolt", "Ready")
+custom:OnClick(function() blockClicks += 1 end)
+custom.Instance.InputBegan:Fire(click)
+uis.InputEnded:Fire(click)
+check(blockClicks == 1, "clicking a watermark block did not run its callback")
+custom:SetText("Running")
+check(custom:GetText() == "Running", "Block:SetText failed")
+blocks[1]:SetVisible(false)
+check(not blocks[2]._separator.Visible, "the first visible block should have no separator")
+blocks[1]:SetVisible(true)
+custom:Destroy()
+check(#wm._blocks == 4 and custom.Instance.Parent == nil, "Block:Destroy did not remove the block")
+
+local wmStart = wm.Instance.Position
+wm.Instance.InputBegan:Fire(click)
+uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(60, 40) })
+uis.InputEnded:Fire(click)
+check(wm.Instance.Position.X.Offset == wmStart.X.Offset + 50 and wm.Instance.Position.Y.Offset == wmStart.Y.Offset + 30, "watermark did not drag")
+
+local list = hudWindow:AddKeybindList()
+check(list.Count == 0 and not list.Instance.Visible, "an active-only keybind list should hide while nothing is on")
+press(Enum.KeyCode.F)
+check(fly.State and list.Count == 1 and list.Instance.Visible, "a toggled-on keybind is not listed")
+local flyRow = list._rows:FindFirstChild("Fly")
+check(flyRow ~= nil and flyRow.Key.Text == "F", "keybind row should show the key")
+press(Enum.KeyCode.LeftShift)
+check(list.Count == 2, "a held keybind is not listed")
+release(Enum.KeyCode.LeftShift)
+check(list.Count == 1, "a released hold keybind is still listed")
+fly:Set(Enum.KeyCode.G)
+check(list._rows:FindFirstChild("Fly").Key.Text == "G", "keybind list did not follow a rebind")
+press(Enum.KeyCode.G)
+check(not fly.State and list.Count == 0 and not list.Instance.Visible, "keybind list did not empty when toggled off")
+
+local all = hudWindow:AddKeybindList({ ShowAll = true, Position = UDim2.fromOffset(300, 200) })
+check(all.Count == 3 and all.Instance.Visible, `ShowAll should list the 3 bound keybinds, got {all.Count}`)
+check(all.Instance.Position.X.Offset == 300 and all.Instance.AnchorPoint.X == 0, "UDim2 Position not applied")
+dashBind:Destroy()
+check(all.Count == 2, "a destroyed keybind is still listed")
+
+local red = Color3.fromRGB(255, 80, 80)
+local auto = hudWindow:AddIndicator({ Text = "AUTO", Icon = "bolt" })
+local hc = hudWindow:AddIndicator({ Text = "HC", Color = red })
+check(auto.Instance.Parent == hudWindow._hudIndicators and hc.Instance.LayoutOrder > auto.Instance.LayoutOrder, "indicators should stack in order")
+check(auto._label.TextColor3 == hudWindow.Theme.Colors.Primary and hc._label.TextColor3 == red, "indicator colors wrong")
+auto:SetColor("Error")
+hudWindow.Theme:Toggle()
+check(auto._label.TextColor3 == hudWindow.Theme.Colors.Error, "indicator color did not follow the theme")
+auto:SetText("FL")
+check(auto:GetText() == "FL", "Indicator:SetText failed")
+auto:SetRender(false)
+check(not auto.Instance.Visible, "Indicator:SetRender(false) did not hide it")
+
+hudWindow:SetVisible(false)
+check(layer.Visible and wm.Instance.Visible, "the HUD should stay up while the window is hidden")
+hudWindow:SetVisible(true)
+hudWindow:AddSettingsTab()
+local showHud = hudWindow.Flags.MD3_ShowHUD
+check(showHud ~= nil, "the settings tab should offer Show HUD once a HUD exists")
+showHud:Set(false)
+check(not layer.Visible, "Show HUD off did not hide the HUD")
+showHud:Set(true)
+
+hudWindow:Destroy()
+check(wm._destroyed and list._destroyed and all._destroyed and auto._destroyed, "HUD pieces not destroyed with the window")
+for _ = 1, 30 do
+	heartbeat:Fire(1 / 30)
+end
+check(wm.FPS == 60, "the watermark kept ticking after unload")
+
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.
 local layouts, unsorted = 0, 0

@@ -78,7 +78,49 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
-`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`（見下方 HUD）、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+
+### HUD（浮水印、快捷鍵列表、狀態指示）
+
+HUD 是畫在螢幕上的常駐資訊，**視窗隱藏或縮小時照樣顯示**，跟著視窗的主題配色，每一塊都能用滑鼠／手指拖到想要的位置，視窗卸載時一起清掉。手機等小螢幕會自動等比縮小。
+
+```lua
+-- 浮水印：標題（預設用視窗的標題和圖標）+ FPS／Ping／時間
+local Watermark = Window:AddWatermark({
+    Title = "My Hub",          -- 省略 = 視窗標題；false = 不顯示標題
+    Position = "TopLeft",      -- 位置預設名稱或 UDim2（見下方）
+    FPS = true,                -- 每 0.5 秒更新
+    Ping = true,               -- 毫秒，跟 Roblox 開發者主控台的數值一樣
+    Clock = true,              -- 本地時間；也可以給 os.date 格式，例如 Clock = "%H:%M"
+})
+
+-- 自訂區塊（NeverLose 寫法 AddBlock(圖標, 文字) 也可以）
+local Status = Watermark:AddBlock({ Icon = "bolt", Text = "Idle", Callback = function() print("clicked") end })
+Status:SetText("Running")
+Status:SetIconColor("Tertiary")   -- 主題色角色或 Color3
+Status:OnClick(function() Window:Toggle() end) -- 點一下（沒拖動）才觸發；別名 :Input(fn)
+
+-- 快捷鍵列表：自動列出 AddKeybind 建立的快捷鍵
+local Binds = Window:AddKeybindList({
+    Title = "Keybinds",
+    Position = "Left",
+    ShowAll = false,           -- false：只列「開著」的 Toggle 快捷鍵和「按住中」的 Hold 快捷鍵，沒有時自動隱藏
+                               -- true：列出所有已綁定的快捷鍵，開著的會亮起來
+})
+
+-- 狀態指示：左下角的小膠囊，全部疊在一起
+local Auto = Window:AddIndicator({ Text = "AUTO", Icon = "bolt", Color = "Primary" })
+Auto:SetText("OFF")
+Auto:SetColor("Error")           -- 主題色角色（Primary、Tertiary、Error、OnSurface…）或 Color3
+Auto:SetVisible(false)           -- 別名 :SetRender(false)
+
+Window:SetHUDVisible(false)      -- 一次隱藏／顯示所有 HUD
+```
+
+- **位置**：`Position` 可填 `"TopLeft"`、`"Top"`、`"TopRight"`、`"Left"`、`"Right"`、`"BottomLeft"`、`"Bottom"`、`"BottomRight"`，或 `UDim2`（左上角座標）。預設：浮水印左上、快捷鍵列表左側中間、狀態指示左下。所有狀態指示共用一個堆疊，位置以第一個的 `Position` 為準。
+- **快捷鍵列表**會即時跟著變化：切換開關、按住／放開、重新綁定、刪除快捷鍵都會馬上更新。Press 模式的快捷鍵沒有「開著」的狀態，只在 `ShowAll = true` 時出現。沒綁按鍵的快捷鍵不會列出。Toggle 模式可以用 `keybind:SetState(true)` 從程式同步狀態（不觸發 Callback）。
+- **設定頁開關**：先建立 HUD 再呼叫 `Window:AddSettingsTab()`，設定頁的 Interface 區塊會多一個「Show HUD」開關（Flag `MD3_ShowHUD`，會存進設定檔）。
+- 物件方法：浮水印 `:AddBlock`、`:AddFPS`、`:AddPing`、`:AddClock(format?)`、`:SetVisible`、`:Destroy`，`.TitleBlock` 是標題區塊；區塊 `:SetText`、`:GetText`、`:SetIcon`、`:SetIconColor`、`:SetTextColor`、`:SetVisible`、`:OnClick`、`:Destroy`；快捷鍵列表 `:SetVisible`、`:SetShowAll`、`:SetTitle`、`:Destroy`、`.Count`（目前列出幾個）；狀態指示 `:SetText`、`:GetText`、`:SetIcon`、`:SetColor`、`:SetVisible`、`:Destroy`。
 
 ### 載入外部圖片（`MD3.Assets`）
 

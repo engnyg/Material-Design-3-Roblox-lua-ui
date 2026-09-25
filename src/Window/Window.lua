@@ -25,6 +25,11 @@
 	Main:AddToggle({ Title = "Auto farm", Flag = "AutoFarm", Callback = function(on) end })
 
 	Window:Notify({ Title = "Loaded", Content = "Press RightShift to hide", Icon = "check_circle" })
+
+	-- HUD (stays up while the window is hidden)
+	Window:AddWatermark({ FPS = true, Ping = true, Clock = true })
+	Window:AddKeybindList()
+	Window:AddIndicator({ Text = "AUTO", Icon = "bolt" })
 ]]
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
@@ -49,6 +54,8 @@ local Config = require(script.Parent.Config)
 local Notifier = require(script.Parent.Notifier)
 local Tab = require(script.Parent.Tab)
 local Base = require(script.Parent.Elements.Base)
+local makeDraggable = require(script.Parent.Draggable)
+local HUD = require(script.Parent.HUD)
 
 local TOP_BAR_HEIGHT = 56
 local NAV_WIDTH = 168
@@ -82,48 +89,6 @@ local function sanitize(name: string): string
 	return (tostring(name):gsub("[^%w%-_ ]", ""))
 end
 
--- Makes `handle` drag `target` around (mouse and touch). `onClick` fires
--- instead when the pointer barely moved, so a draggable button still clicks.
-local function makeDraggable(maid, handle: GuiObject, target: GuiObject, onClick)
-	local dragging, dragInput, startPos, startInput = false, nil, nil, nil
-	local moved = false
-
-	maid:GiveTask(handle.InputBegan:Connect(function(input)
-		if isPress(input) then
-			dragging, moved = true, false
-			dragInput = input
-			startInput = input.Position
-			startPos = target.Position
-		end
-	end))
-	maid:GiveTask(UserInputService.InputChanged:Connect(function(input)
-		if not dragging or not isMove(input) then
-			return
-		end
-		if input.UserInputType == Enum.UserInputType.Touch and dragInput.UserInputType == Enum.UserInputType.Touch and input ~= dragInput then
-			return
-		end
-		local delta = input.Position - startInput
-		if delta.Magnitude > 4 then
-			moved = true
-		end
-		target.Position = UDim2.new(
-			startPos.X.Scale,
-			startPos.X.Offset + delta.X,
-			startPos.Y.Scale,
-			startPos.Y.Offset + delta.Y
-		)
-	end))
-	maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
-		if dragging and isPress(input) then
-			dragging = false
-			if not moved and onClick then
-				onClick()
-			end
-		end
-	end))
-end
-
 function Window.new(props)
 	props = props or {}
 	local self = setmetatable({}, Window)
@@ -134,6 +99,10 @@ function Window.new(props)
 	self.Visible = true
 	self.Minimized = false
 	self.OnUnload = Signal.new()
+	-- Every Keybind element, and a signal fired when one is added, removed,
+	-- rebound or switched on/off (drives the HUD keybind list).
+	self._keybinds = {}
+	self.KeybindsChanged = Signal.new()
 	self._maid = Maid.new()
 	self._toggleKey = toKeyCode(props.ToggleKey or props.Keybind) or Enum.KeyCode.RightShift
 	self._size = props.Size or DEFAULT_SIZE
@@ -245,6 +214,8 @@ function Window.new(props)
 	-- Logo = a colored image kept as-is; Icon = a tinted Material icon or image.
 	local appIconSource = props.Logo or props.Icon
 	local hasAppIcon = appIconSource ~= nil and Base.CanShowIcon(appIconSource)
+	self._appIconSource = appIconSource -- reused by the HUD watermark
+	self._appIconTint = props.Logo == nil
 	if hasAppIcon then
 		local appIcon = Base.Glyph(themer, appIconSource, 24, props.AppIconColor or "IconAccent", topBar, props.Logo == nil)
 		appIcon.AnchorPoint = Vector2.new(0, 0.5)
@@ -773,6 +744,27 @@ function Window:Dialog(props)
 	return dialog
 end
 
+--== HUD (stays on screen while the window is hidden; see HUD.lua) ==--
+
+-- AddWatermark({ Title, Icon, Position = "TopLeft", FPS, Ping, Clock })
+function Window:AddWatermark(props)
+	return HUD.Watermark(self, props)
+end
+
+-- AddKeybindList({ Title = "Keybinds", Position = "Left", ShowAll = false })
+function Window:AddKeybindList(props)
+	return HUD.KeybindList(self, props)
+end
+
+-- AddIndicator({ Text, Icon, Color = "Primary" })
+function Window:AddIndicator(props)
+	return HUD.Indicator(self, props)
+end
+
+function Window:SetHUDVisible(visible: boolean)
+	HUD.Layer(self).Visible = visible
+end
+
 --== Configs ==--
 
 function Window:CanSaveConfigs(): boolean
@@ -980,6 +972,18 @@ function Window:AddSettingsTab(props)
 			self:SetToggleKey(key)
 		end,
 	})
+	-- Only when the script built some HUD before adding the settings tab.
+	if self._hudLayer then
+		interface:AddToggle({
+			Title = "Show HUD",
+			Description = "Watermark, keybind list and indicators",
+			Default = self._hudLayer.Visible,
+			Flag = "MD3_ShowHUD",
+			Callback = function(on)
+				self:SetHUDVisible(on)
+			end,
+		})
+	end
 	interface:AddButton({
 		Title = "Reset window size",
 		Description = "Drag the bottom-right corner to resize",
