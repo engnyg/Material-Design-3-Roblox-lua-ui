@@ -20,7 +20,8 @@
 		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
 		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
-		Background = nil,                  -- background image: URL / rbxassetid / asset id (SetBackground)
+		Background = nil,                  -- background image (PNG / JPG) or WebM video: URL / rbxassetid / asset id
+		BackgroundKind = nil,              -- "Video" for a Roblox video asset id (a .webm is detected by itself)
 		BackgroundTransparency = 0.4,      -- how much of the window color shows through the image
 		Silent = false,                    -- true: no loading screen, start hidden, no automatic notifications
 		KeybindNotify = true,              -- toast when a keybind (AddKeybind) is used; not for the UI toggle key
@@ -98,6 +99,15 @@ end
 
 local function sanitize(name: string): string
 	return (tostring(name):gsub("[^%w%-_ ]", ""))
+end
+
+-- True for a .webm URL / file, which SetBackground plays as a video.
+local function isVideoSource(source): boolean
+	if type(source) ~= "string" then
+		return false
+	end
+	local path = source:gsub("[?#].*$", "")
+	return path:lower():match("%.webm$") ~= nil
 end
 
 function Window.new(props)
@@ -219,8 +229,9 @@ function Window.new(props)
 	self.Instance = main
 	self._uiScale = uiScale
 
-	-- Custom background image (SetBackground): behind everything in the
-	-- window, rounded like it; its transparency lets the window color through.
+	-- Custom background (SetBackground): an image, or a looping muted WebM
+	-- video, behind everything in the window and rounded like it. Its
+	-- transparency lets the window color through.
 	local background = Create("ImageLabel") {
 		Name = "Background",
 		BackgroundTransparency = 1,
@@ -231,19 +242,43 @@ function Window.new(props)
 		Parent = main,
 	}
 	Shape.Corner(Shape.Large, background)
+	local video = Create("VideoFrame") {
+		Name = "BackgroundVideo",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 0,
+		Looped = true,
+		Volume = 0,
+		Visible = false,
+		Parent = main,
+	}
+	Shape.Corner(Shape.Large, video)
+	-- A VideoFrame has no transparency of its own: a window-colored veil on
+	-- top does what ImageTransparency does for the image.
+	local veil = Create("Frame") {
+		Name = "Veil",
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Parent = video,
+	}
+	Shape.Corner(Shape.Large, veil)
+	themer:Bind(veil, {
+		BackgroundColor3 = function(colors)
+			return colors.Surface
+		end,
+	})
+	-- Don't decode video nobody can see.
+	self._maid:GiveTask(main:GetPropertyChangedSignal("Visible"):Connect(function()
+		video.Playing = main.Visible and video.Visible
+	end))
 	self._background = background
+	self._backgroundVideo = video
+	self._backgroundVeil = veil
 	self._backgroundSource = nil
+	self._backgroundKind = nil
 	self._backgroundTransparency = math.clamp(props.BackgroundTransparency or 0.4, 0, 1)
 	background.ImageTransparency = self._backgroundTransparency
-	if props.Background then
-		-- Downloading a URL can take a moment; don't hold up CreateWindow.
-		task.spawn(function()
-			local ok, err = self:SetBackground(props.Background)
-			if not ok then
-				warn(`[MD3] background: {err}`)
-			end
-		end)
-	end
+	veil.BackgroundTransparency = 1 - self._backgroundTransparency
 
 	-- The shadow is a sibling of `main`, outside its UIScale, so it gets its
 	-- own UIScale kept in sync (otherwise it stays full size on phones).
@@ -586,6 +621,19 @@ function Window.new(props)
 		self.IsLoaded = true
 	end
 
+	if props.Background then
+		-- Downloading can take a moment; don't hold up CreateWindow.
+		task.spawn(function()
+			local ok, err = self:SetBackground(props.Background, nil, props.BackgroundKind)
+			if not ok and not self._destroyed then
+				warn(`[MD3] background: {err}`)
+				if not self.Silent then
+					self:Notify({ Title = "Background unavailable", Content = err or "", Icon = "error" })
+				end
+			end
+		end)
+	end
+
 	return self
 end
 
@@ -915,28 +963,38 @@ end
 
 --== Custom background ==--
 
--- Background image behind the whole window: a URL, rbxassetid://, asset id
--- or workspace file (anything Assets.Resolve takes); nil or "" removes it.
--- `transparency` (0-1, optional) also sets how much of the window color
--- shows through. If the image can't be loaded the current background is
--- kept and this returns false plus the reason.
-function Window:SetBackground(image: string?, transparency: number?): (boolean, string?)
+-- Background behind the whole window: an image (PNG / JPG) or a WebM video
+-- (looping, muted), as a URL, rbxassetid://, asset id or workspace file;
+-- nil or "" removes it. `transparency` (0-1, optional) also sets how much of
+-- the window color shows through. `kind` ("Image" | "Video") is only needed
+-- for a Roblox video asset id; otherwise a .webm is played as a video.
+-- If it can't be loaded (e.g. a GIF, which Roblox can't show) the current
+-- background is kept and this returns false plus the reason.
+function Window:SetBackground(source: string?, transparency: number?, kind: string?): (boolean, string?)
 	if transparency ~= nil then
 		self:SetBackgroundTransparency(transparency)
 	end
-	local background = self._background
-	if image == nil or image == "" then
-		self._backgroundSource = nil
-		background.Image = ""
-		background.Visible = false
+	local image, video = self._background, self._backgroundVideo
+	if source == nil or source == "" then
+		self._backgroundSource, self._backgroundKind = nil, nil
+		image.Image = ""
+		image.Visible = false
+		video.Playing = false
+		video.Video = ""
+		video.Visible = false
 	else
-		local resolved = Assets.Resolve(image)
-		if resolved == "" then
-			return false, `could not load {image}`
+		local isVideo = if kind then kind == "Video" else isVideoSource(source)
+		local content, problem = Assets.ResolveWithReason(source, if isVideo then "video" else "image")
+		if content == "" then
+			return false, problem or `could not load {source}`
 		end
-		self._backgroundSource = image
-		background.Image = resolved
-		background.Visible = true
+		self._backgroundSource = source
+		self._backgroundKind = if isVideo then "Video" else "Image"
+		image.Image = if isVideo then "" else content
+		image.Visible = not isVideo
+		video.Video = if isVideo then content else ""
+		video.Visible = isVideo
+		video.Playing = isVideo and self.Instance.Visible
 	end
 	self:_syncBackgroundControls()
 	return true
@@ -945,12 +1003,14 @@ end
 function Window:SetBackgroundTransparency(transparency: number)
 	self._backgroundTransparency = math.clamp(transparency, 0, 1)
 	self._background.ImageTransparency = self._backgroundTransparency
+	self._backgroundVeil.BackgroundTransparency = 1 - self._backgroundTransparency
 	self:_syncBackgroundControls()
 end
 
--- The current image (as given to SetBackground, nil when none) and its transparency.
-function Window:GetBackground(): (string?, number)
-	return self._backgroundSource, self._backgroundTransparency
+-- The current background (as given to SetBackground, nil when none), its
+-- transparency, and "Image" / "Video".
+function Window:GetBackground(): (string?, number, string?)
+	return self._backgroundSource, self._backgroundTransparency, self._backgroundKind
 end
 
 -- Keeps the settings tab's Background controls showing the real state.
@@ -1171,8 +1231,8 @@ function Window:AddSettingsTab(props)
 	local backgroundInput
 	backgroundInput = backgroundSection:AddInput({
 		Title = "Background image",
-		Description = "Image URL, rbxassetid:// or asset id. To see it behind the content too, make Content panel / Rows see-through in the theme editor",
-		Placeholder = "https://... or rbxassetid://...",
+		Description = "PNG / JPG image or WebM video: URL, rbxassetid:// or asset id. GIF isn't supported by Roblox (convert it to WebM). To see it behind the content too, make Content panel / Rows see-through in the theme editor",
+		Placeholder = "https://... .png / .jpg / .webm",
 		Default = self._backgroundSource or "",
 		Flag = "MD3_Background",
 		Callback = function(text)

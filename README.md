@@ -163,7 +163,7 @@ MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭
 
 ### 自訂背景
 
-視窗可以放一張背景圖片，鋪滿整個視窗（圓角跟視窗一樣、自動裁切填滿），在所有內容後面：
+視窗可以放一張背景圖片或一段**影片**，鋪滿整個視窗（圓角跟視窗一樣、自動裁切填滿），在所有內容後面：
 
 ```lua
 local Window = MD3:CreateWindow({
@@ -173,13 +173,19 @@ local Window = MD3:CreateWindow({
 })
 
 Window:SetBackground("rbxassetid://123456", 0.3) -- 換圖（第二個參數可省略）；失敗會保留原本的背景並回傳 false, 原因
+Window:SetBackground("https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/assets/background/lystore.webm") -- 影片背景
 Window:SetBackgroundTransparency(0.6)
 Window:SetBackground(nil)                        -- 移除
-local image, transparency = Window:GetBackground()
+local source, transparency, kind = Window:GetBackground() -- kind："Image" | "Video"
 ```
 
+- **影片背景**：`.webm` 網址或檔案會自動當影片播放（循環、靜音），視窗隱藏時暫停、打開時繼續；透明度、設定頁、設定檔跟圖片共用。Roblox 上傳的影片素材 ID 看不出是影片，要指定：`Window:SetBackground("rbxassetid://123", nil, "Video")`（`CreateWindow` 用 `BackgroundKind = "Video"`）。影片能不能播要看 executor 支不支援用 `getcustomasset` 載入 `.webm`。
+- **GIF 不支援**：Roblox 不能播、也不能顯示 GIF。想要動態背景，把 GIF 轉成 WebM（例如 `ffmpeg -i bg.gif -c:v libvpx-vp9 -b:v 0 -crf 32 -an bg.webm`，或線上轉檔工具）；靜態背景用 PNG／JPG。WebP 也不支援。
+- **格式會檢查**：下載的檔案會看檔頭判斷是 PNG／JPG／WebM；GIF、WebP、網頁（例如 GitHub 的 404 頁面）會被擋下並說明原因。之前版本已經存進 workspace 的 GIF 也會被找出來刪掉。
+- **失敗一定會通知**：`CreateWindow` 的 `Background`、設定頁的輸入框、設定檔載入，失敗時都會跳「Background unavailable」通知並寫明原因（安靜模式只在主控台 `warn`）。
+
 - 圖片來源跟其他 `Icon`／`Logo` 一樣走 `MD3.Assets`：網址會自動下載（`HttpGet` → `writefile` → `getcustomasset`），也能用 `rbxassetid://`、純數字 ID 或 workspace 內的檔案。`CreateWindow` 裡的網址在背景下載，不會卡住建立視窗。
-- **設定頁**的 Background 區塊：「Background image」輸入框（貼網址或 ID 後按 Enter；載入失敗會跳通知並還原）、「Image transparency」滑桿、「Remove background」按鈕。兩個值會存進設定檔（Flag `MD3_Background`／`MD3_BackgroundTransparency`）。
+- **設定頁**的 Background 區塊：「Background image」輸入框（貼圖片或 `.webm` 網址、ID 後按 Enter；載入失敗會跳通知並還原）、「Image transparency」滑桿、「Remove background」按鈕。兩個值會存進設定檔（Flag `MD3_Background`／`MD3_BackgroundTransparency`）。
 - 右側內容區（Content panel）和各列（Rows）預設是不透明的，所以圖片主要從標題列、左側分頁欄和邊緣露出來；想讓圖片也透到內容後面，到主題編輯器把 **Content panel**、**Rows** 的透明度調高即可。
 
 ### 主題色、圖標、文字顏色
