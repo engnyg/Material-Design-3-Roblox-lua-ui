@@ -93,6 +93,7 @@ Misc:AddButton({
 	Title = "Rejoin",
 	Description = "Teleport back into this server",
 	Icon = "refresh",
+	IconColor = "Tertiary", -- per-icon color: a theme role, or a Color3
 	Callback = function()
 		game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
 	end,
@@ -208,7 +209,7 @@ Demo:AddButton({
 	end,
 })
 
---== Settings tab (theme / accent / toggle key / configs) ==--
+--== Settings tab (theme / accent / theme editor / toggle key / configs) ==--
 Window:AddSettingsTab()
 
 -- Stop everything this script started when the UI is unloaded.

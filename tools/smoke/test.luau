@@ -384,6 +384,76 @@ check(Window:GetAutoLoad() == "main" and Window:LoadAutoloadConfig(), "autoload 
 settings:Select()
 check(Window.SelectedTab == settings, "Tab:Select failed")
 
+--== Theme overrides + theme editor ==--
+local wt = Window.Theme
+local red, green = Color3.new(1, 0, 0), Color3.new(0, 1, 0)
+local generatedPrimary = wt.Colors.Primary
+wt:SetOverride("Primary", red)
+check(wt.Colors.Primary == red and wt:IsOverridden("Primary"), "SetOverride did not pin Primary")
+check(wt.Colors.IconAccent == red, "IconAccent should follow an overridden Primary")
+check(wt.Colors.OnPrimary == wt:ContrastColor(red), "OnPrimary should be recomputed for contrast")
+wt:SetSeedColor(Color3.fromHex("#006A6A"))
+check(wt.Colors.Primary == red, "override lost on SetSeedColor")
+wt:SetMode(if wt.Mode == "Dark" then "Light" else "Dark")
+check(wt.Colors.Primary == red, "override lost on SetMode")
+
+-- IconColor + icon roles
+local iconButton = main:AddButton({ Title = "Danger", Icon = "delete", IconColor = "Error" })
+local iconLabel = iconButton.Instance:FindFirstChild("Body").Header.Control.Icon
+check(iconLabel.TextColor3 == wt.Colors.Error, "Button IconColor role not applied")
+local fixedTab = Window:AddTab({ Title = "Fixed", Icon = "bolt", IconColor = green })
+check(fixedTab._icon.TextColor3 == green, "Tab IconColor Color3 not applied")
+local plainButton = main:AddButton({ Title = "Plain", Icon = "home" })
+local plainIcon = plainButton.Instance:FindFirstChild("Body").Header.Control.Icon
+wt:SetOverride("Icon", green)
+check(plainIcon.TextColor3 == green, "Icon role override did not recolor icons")
+check(main._icon.TextColor3 == green or Window.SelectedTab == main, "unselected tab icon should use the Icon role")
+
+-- Editor pickers stay in sync and edit overrides
+local editorFlag = Window.Flags.MD3_ThemeOverrides
+check(editorFlag and editorFlag.Value.Primary == red and editorFlag.Value.Icon == green, "MD3_ThemeOverrides flag not tracking overrides")
+check(Window:SaveConfig("themed"), "SaveConfig with overrides failed")
+wt:ClearOverrides()
+check(wt.Colors.Primary ~= red and not wt:IsOverridden("Icon"), "ClearOverrides failed")
+check(Window:LoadConfig("themed") and wt.Colors.Primary == red and wt.Colors.Icon == green, "config did not restore theme overrides")
+
+local exported = wt:Export()
+check(exported.Overrides.Primary == "ff0000" and exported.Mode == wt.Mode, "Theme:Export wrong")
+wt:ClearOverrides()
+wt:Import(exported)
+check(wt.Colors.Primary == red, "Theme:Import did not restore overrides")
+wt:Import({ Seed = "B3261E", Mode = "Light", Overrides = {} })
+check(wt.Mode == "Light" and wt.Seed:ToHex() == "b3261e" and not wt:IsOverridden("Primary"), "Theme:Import seed/mode wrong")
+check(Window.Flags.MD3_DarkMode.Value == false and Window.Flags.MD3_Accent.Value == wt.Seed, "settings toggles not synced after import")
+check(generatedPrimary ~= nil, "sanity")
+
+-- The editor UI itself (Settings > Theme editor)
+local editor = settings._sections[2]
+check(editor and editor._header.Text == "Theme editor", "settings tab has no theme editor section")
+local function find(title)
+	for _, element in editor._elements do
+		if element._title and element._title.Text == title then
+			return element
+		end
+	end
+	error(`theme editor has no "{title}"`)
+end
+find("Preset"):Set("Blue")
+check(wt.Seed:ToHex() == "0061a4" and Window.Flags.MD3_Accent.Value:ToHex() == "0061a4", "preset did not apply")
+local surfacePicker = find("Background")
+check(surfacePicker.Value == wt.Colors.Surface and surfacePicker._desc.Text == "Surface", "picker not showing the current color")
+surfacePicker:Set(Color3.fromHex("#112233"))
+check(wt.Colors.Surface:ToHex() == "112233" and surfacePicker._desc.Text == "Surface · custom", "picker edit did not override the role")
+check(wt.Colors.OnSurface == wt:ContrastColor(wt.Colors.Surface), "text color not adjusted for the custom background")
+find("Reset custom colors"):Fire()
+check(not wt:IsOverridden("Surface") and surfacePicker.Value == wt.Colors.Surface, "reset did not refresh pickers")
+wt:SetOverride("Tertiary", red)
+local json = game:GetService("HttpService"):JSONEncode(wt:Export())
+wt:ClearOverrides()
+find("Import theme"):Set(json)
+check(wt.Colors.Tertiary == red, "import input did not apply the theme")
+wt:ClearOverrides()
+
 -- Theme switch with the whole window alive
 Window.Theme:Toggle()
 Window.Theme:SetSeedColor(Color3.fromHex("#B3261E"))

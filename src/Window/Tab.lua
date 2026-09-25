@@ -95,6 +95,9 @@ function Tab.new(window, props)
 	self._elements = {}
 	self._sections = {}
 	self.Title = props.Title or props.Name or "Tab"
+	-- nil = follow the theme's Icon / IconSelected roles; a role name or a
+	-- Color3 pins the icon color (selected or not).
+	self._iconColor = props.IconColor
 	local themer = window._themer
 	local theme = window.Theme
 
@@ -192,7 +195,14 @@ function Tab:_paint()
 	}):Play()
 	local content = active and c.OnSecondaryContainer or c.OnSurfaceVariant
 	self._label.TextColor3 = content
-	Base.SetIconColor(self._icon, content)
+	local iconColor = self._iconColor
+	if typeof(iconColor) == "Color3" then
+		Base.SetIconColor(self._icon, iconColor)
+	elseif type(iconColor) == "string" and c[iconColor] then
+		Base.SetIconColor(self._icon, c[iconColor])
+	else
+		Base.SetIconColor(self._icon, active and c.IconSelected or c.Icon)
+	end
 	self._stateLayer:SetColor(c.OnSurface)
 end
 
@@ -212,6 +222,12 @@ function Tab:AddSection(title: string?)
 	return section
 end
 Tab.CreateSection = Tab.AddSection
+
+-- Pins the tab icon's color (theme role name or Color3); nil follows the theme.
+function Tab:SetIconColor(color)
+	self._iconColor = color
+	self:_paint()
+end
 
 function Tab:Select()
 	self._window:SelectTab(self)

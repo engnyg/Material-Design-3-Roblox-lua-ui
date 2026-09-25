@@ -39,6 +39,7 @@ function Notifier.new(parent: Instance, themer)
 end
 
 -- Notify({ Title = "Saved", Content = "Config written", Icon = "save", Duration = 5 })
+-- IconColor: a theme role or a Color3 (default "IconAccent").
 function Notifier:Notify(props)
 	if type(props) == "string" then
 		props = { Title = props }
@@ -90,7 +91,7 @@ function Notifier:Notify(props)
 	local iconName = props.Image or props.Icon or "notifications"
 	local hasIcon = props.Icon ~= false and Base.CanShowIcon(iconName)
 	if hasIcon then
-		local icon = Base.Glyph(themer, iconName, 20, "Primary", card, props.Image == nil)
+		local icon = Base.Glyph(themer, iconName, 20, props.IconColor or "IconAccent", card, props.Image == nil)
 		icon.ZIndex = 51
 		if icon:IsA("ImageLabel") and not icon.Visible then
 			hasIcon = false

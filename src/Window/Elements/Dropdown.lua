@@ -85,7 +85,7 @@ return function(container, props)
 	}
 	Typography.Apply(fieldLabel, "BodyMedium")
 
-	local arrow = Base.Glyph(themer, "expand_more", 20, "OnSurfaceVariant", field)
+	local arrow = Base.Glyph(themer, "expand_more", 20, "Icon", field)
 	arrow.AnchorPoint = Vector2.new(1, 0.5)
 	arrow.Position = UDim2.new(1, -8, 0.5, 0)
 
