@@ -36,6 +36,12 @@ game.HttpGet = function(_, url)
 		return "\137PNG fake image bytes"
 	elseif url:find("notfound") then
 		return "<!DOCTYPE html><html>404</html>"
+	elseif url:find("%.gif") then
+		return "GIF89a fake animation"
+	elseif url:find("%.webm") then
+		return "\26\69\223\163 fake webm video"
+	elseif url:find("%.webp") then
+		return "RIFF\0\0\0\0WEBPVP8 fake"
 	end
 	error(`unexpected HttpGet {url}`)
 end
@@ -959,6 +965,74 @@ check(not bgImage.Visible and bgInput.Value == "", "Remove background failed")
 check(bgWin:LoadConfig("bg"), "loading the background config failed")
 check(bgImage.Visible and bgWin:GetBackground() == logoUrl and near(bgImage.ImageTransparency, 0.7), "the background was not restored from the config")
 bgWin:Destroy()
+
+do -- own scope: the file is near Luau's 200-locals limit
+-- File formats: GIF / WebP / web pages are refused with a reason
+check(Assets.Sniff("\137PNG....") == "png" and Assets.Sniff("\255\216\255\224") == "jpg", "Sniff png / jpg")
+check(Assets.Sniff("\26\69\223\163") == "webm" and Assets.Sniff("GIF89a") == "gif" and Assets.Sniff("RIFF\0\0\0\0WEBP") == "webp", "Sniff webm / gif / webp")
+local gifUrl = "https://example.com/anim.gif"
+local webmUrl = "https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/assets/background/lystore.webm"
+local noImage, gifReason = Assets.ResolveWithReason(gifUrl)
+check(noImage == "" and string.find(gifReason, "GIF", 1, true) ~= nil and string.find(gifReason, "WebM", 1, true) ~= nil, `GIF reason: {gifReason}`)
+local _, webpReason = Assets.ResolveWithReason("https://example.com/pic.webp")
+check(string.find(webpReason, "WebP", 1, true) ~= nil, "WebP should be refused")
+local _, videoAsImage = Assets.ResolveWithReason(webmUrl, "image")
+check(string.find(videoAsImage, "video", 1, true) ~= nil, "a WebM should not load as an image")
+local _, imageAsVideo = Assets.ResolveWithReason(logoUrl, "video")
+check(string.find(imageAsVideo, "WebM", 1, true) ~= nil, "a PNG should not load as a video")
+
+-- Video background, and failures that notify
+local vidWin = MD3.CreateWindow({ Title = "Video Hub", Parent = host, ConfigFolder = "VidHub", Background = gifUrl })
+check(toasts(vidWin) == 1 and select(2, lastToast(vidWin)):find("GIF", 1, true) ~= nil, "a GIF Background in CreateWindow should notify why")
+check(not vidWin._background.Visible and not vidWin._backgroundVideo.Visible, "a GIF should not become the background")
+local silentGif = MD3.CreateWindow({ Title = "Silent Gif", Parent = host, Background = gifUrl, Silent = true })
+check(toasts(silentGif) == 0, "Silent mode should not notify about the background")
+silentGif:Destroy()
+
+local video = vidWin._backgroundVideo
+local veil = vidWin._backgroundVeil
+check(vidWin:SetBackground(webmUrl, 0.3), "SetBackground(.webm) failed")
+local _, vidT, vidKind = vidWin:GetBackground()
+check(vidKind == "Video" and near(vidT, 0.3), "GetBackground should report a video")
+check(video.Visible and video.Video ~= "" and video.Looped and video.Volume == 0 and video.Playing, "the video should play, looped and muted")
+check(not vidWin._background.Visible, "the image should hide while a video plays")
+check(near(veil.BackgroundTransparency, 0.7) and veil.BackgroundColor3 == vidWin.Theme.Colors.Surface, "the veil should do the transparency")
+vidWin:SetVisible(false)
+check(not video.Playing, "the video should pause while the window is hidden")
+vidWin:SetVisible(true)
+check(video.Playing, "the video should resume when the window shows")
+vidWin:SetBackground(logoUrl)
+check(vidWin._background.Visible and not video.Visible and not video.Playing and video.Video == "", "switching to an image should stop the video")
+check(not vidWin:SetBackground(webmUrl, nil, "Image"), "kind = Image should refuse a WebM")
+check(vidWin:SetBackground("rbxassetid://123", nil, "Video") and video.Video == "rbxassetid://123" and video.Visible, "kind = Video for a Roblox video id")
+
+vidWin:AddSettingsTab()
+local vidInput = vidWin.Flags.MD3_Background
+local before = toasts(vidWin)
+vidInput:Set(gifUrl)
+check(toasts(vidWin) == before + 1 and select(2, lastToast(vidWin)):find("GIF", 1, true) ~= nil, "a GIF in the settings field should notify why")
+vidInput:Set(webmUrl)
+check(video.Visible and vidWin:GetBackground() == webmUrl, "a WebM in the settings field should become a video background")
+vidWin:SaveConfig("vid")
+vidWin:SetBackground(nil)
+check(not video.Visible and not video.Playing, "removing should stop the video")
+check(vidWin:LoadConfig("vid") and video.Visible and video.Playing, "the video background was not restored from the config")
+
+-- A GIF cached on disk by an older version is refused and deleted
+local cachedPath = nil
+for path in files do
+	if path:find("lystore%.webm$") then
+		cachedPath = path
+	end
+end
+check(cachedPath ~= nil, "the WebM should have been cached in the workspace")
+files[cachedPath] = "GIF89a stale"
+Assets.Forget(webmUrl)
+local staleOk, staleReason = vidWin:SetBackground(webmUrl)
+check(not staleOk and staleReason:find("WebM", 1, true) ~= nil and files[cachedPath] == nil, "a bad cached file should be refused and deleted")
+check(vidWin:SetBackground(webmUrl) and video.Visible, "after deleting the bad file the WebM should download again")
+vidWin:Destroy()
+end
 
 -- Theme presets: NeverLose (a full preset: mode + pinned colors)
 local rgb = Color3.fromRGB
