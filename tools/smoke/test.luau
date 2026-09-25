@@ -837,6 +837,91 @@ scriptOff:AddSettingsTab()
 check(findElement(scriptOff, "Loading animation") == nil, "no loading switch when the script turned it off")
 scriptOff:Destroy()
 
+-- Silent start: no loading screen, starts hidden, autoload without a toast
+local silent = MD3.CreateWindow({ Title = "Silent Hub", Parent = host, ConfigFolder = "SilentHub", ToggleKey = "F8", Silent = true, LoadingScreen = true })
+check(silent.Silent and silent._loadingScreen == nil and silent.IsLoaded, "Silent should skip the loading screen")
+check(silent.Visible == false and not silent.Instance.Visible, "a silent window should start hidden")
+local silentTab = silent:AddTab({ Title = "Main" })
+local silentToggle = silentTab:AddToggle({ Title = "Auto", Flag = "SilentAuto" })
+silentToggle:Set(true)
+silent:SaveConfig("default")
+silent:SetAutoLoad("default")
+silentToggle:Set(false)
+local function toasts(window)
+	return #window._notifier.Instance:GetChildren() - 1 -- minus the UIListLayout
+end
+check(silent:LoadAutoloadConfig() and silentToggle.Value == true, "silent autoload did not apply the config")
+check(toasts(silent) == 0, "silent autoload should not notify")
+silent:Notify({ Title = "Explicit" })
+check(toasts(silent) == 1, "an explicit Notify should still show in silent mode")
+silent:AddSettingsTab()
+check(findElement(silent, "Loading animation") == nil, "no loading switch in silent mode")
+press(Enum.KeyCode.F8)
+check(silent.Visible and silent.Instance.Visible, "the toggle key should open a silent window")
+silentTab:AddKeybind({ Title = "Dash", Default = "F9" })
+press(Enum.KeyCode.F9)
+check(toasts(silent) == 1, "keybinds should not notify in silent mode")
+silent:Destroy()
+local loud = MD3.CreateWindow({ Title = "Loud Hub", Parent = host, ConfigFolder = "SilentHub" })
+loud:AddTab({ Title = "Main" }):AddToggle({ Title = "Auto", Flag = "SilentAuto" })
+check(loud.Instance.Visible and loud:LoadAutoloadConfig() and toasts(loud) == 1, "a normal window should notify on autoload")
+loud:Destroy()
+
+-- Keybind toasts: the player's own keybinds notify, the UI toggle key doesn't
+local toastWin = MD3.CreateWindow({ Title = "Toast Hub", Parent = host, ToggleKey = "F7" })
+local keysTab = toastWin:AddTab({ Title = "Keys" })
+keysTab:AddKeybind({ Title = "Fly", Default = "F2", Mode = "Toggle" })
+keysTab:AddKeybind({ Title = "Dash", Default = "F3" })
+local holdKey = keysTab:AddKeybind({ Title = "Sprint", Default = "F4", Mode = "Hold" })
+keysTab:AddKeybind({ Title = "Muted", Default = "F5", Notify = false })
+toastWin:AddSettingsTab() -- has a "Toggle UI" keybind on F7 too
+local function lastToast(window)
+	local newest = nil
+	for _, slot in window._notifier.Instance:GetChildren() do
+		if slot.Name == "Notification" and (newest == nil or slot.LayoutOrder > newest.LayoutOrder) then
+			newest = slot
+		end
+	end
+	-- The card is a TextButton, so .Text is its Text property: look the column up by name.
+	local column = newest.Card:FindFirstChild("Text")
+	return column.Title.Text, column.Content.Text
+end
+press(Enum.KeyCode.F7)
+check(not toastWin.Visible and toasts(toastWin) == 0, "the UI toggle key should not notify")
+press(Enum.KeyCode.F7)
+check(toastWin.Visible and toasts(toastWin) == 0, "the UI toggle key should not notify (showing)")
+press(Enum.KeyCode.F2)
+local title, content = lastToast(toastWin)
+check(toasts(toastWin) == 1 and title == "Fly" and content == "Enabled (F2)", `toggle keybind toast: {title} / {content}`)
+press(Enum.KeyCode.F2)
+flushTweens()
+title, content = lastToast(toastWin)
+check(toasts(toastWin) == 1 and content == "Disabled (F2)", "a keybind's new toast should replace its previous one")
+press(Enum.KeyCode.F3)
+title, content = lastToast(toastWin)
+check(toasts(toastWin) == 2 and title == "Dash" and content == "Activated (F3)", `press keybind toast: {title} / {content}`)
+press(Enum.KeyCode.F4)
+release(Enum.KeyCode.F4)
+check(toasts(toastWin) == 2, "hold keybinds should stay quiet by default")
+press(Enum.KeyCode.F5)
+check(toasts(toastWin) == 2, "Notify = false should stay quiet")
+toastWin:SetKeybindNotify(false)
+press(Enum.KeyCode.F3)
+flushTweens()
+check(toasts(toastWin) == 2 and not toastWin:GetKeybindNotify(), "SetKeybindNotify(false) should silence every keybind")
+toastWin:SetKeybindNotify(true)
+holdKey:SetNotify(true)
+press(Enum.KeyCode.F4)
+release(Enum.KeyCode.F4)
+title, content = lastToast(toastWin)
+check(toasts(toastWin) == 3 and content == "Holding (F4)", "SetNotify(true) on a hold keybind")
+toastWin:Destroy()
+local quietKeys = MD3.CreateWindow({ Title = "Quiet Keys", Parent = host, KeybindNotify = false })
+quietKeys:AddTab({ Title = "Keys" }):AddKeybind({ Title = "Dash", Default = "F10" })
+press(Enum.KeyCode.F10)
+check(toasts(quietKeys) == 0, "KeybindNotify = false should silence keybinds")
+quietKeys:Destroy()
+
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.
 local layouts, unsorted = 0, 0

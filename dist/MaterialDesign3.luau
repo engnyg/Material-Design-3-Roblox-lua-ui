@@ -6830,6 +6830,7 @@ loaders[newNode("Keybind", N_Window_Elements)] = function(script, require)
 		Flag = "DashKey",
 		Callback = function(...) end,
 		ChangedCallback = function(newKey) end, -- when the user rebinds
+		Notify = nil,               -- toast when used; default: on for Press / Toggle, off for Hold
 	})
 
 	Click the chip, then press a key. Esc cancels, Backspace unbinds.
@@ -6934,6 +6935,29 @@ return function(container, props)
 		end
 	end
 
+	-- Toast telling the player what the key just did. Hold keys stay quiet
+	-- by default (you see the effect while holding). A new toast replaces
+	-- this keybind's previous one, so repeated presses don't pile up.
+	local notify = props.Notify
+	if notify == nil then
+		notify = mode ~= "Hold"
+	end
+	local toast = nil
+	local function announce(content: string, icon: string)
+		if not notify or not window:GetKeybindNotify() then
+			return
+		end
+		if toast then
+			toast.Close()
+		end
+		local title = element._title and element._title.Text or "Keybind"
+		toast = window:Notify({ Title = title, Content = `{content} ({element.Value.Name})`, Icon = icon, Duration = 2 })
+	end
+
+	function element:SetNotify(enabled: boolean)
+		notify = enabled
+	end
+
 	local function setListening(value: boolean)
 		listening = value
 		window._keybindListening = value
@@ -6971,11 +6995,14 @@ return function(container, props)
 			if mode == "Toggle" then
 				setState(not element.State)
 				fire(element.State)
+				announce(if element.State then "Enabled" else "Disabled", if element.State then "toggle_on" else "toggle_off")
 			elseif mode == "Hold" then
 				setState(true)
 				fire(true)
+				announce("Holding", "keyboard")
 			else
 				fire()
+				announce("Activated", "keyboard")
 			end
 		end
 	end))
@@ -8814,6 +8841,8 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
 		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
+		Silent = false,                    -- true: no loading screen, start hidden, no automatic notifications
+		KeybindNotify = true,              -- toast when a keybind (AddKeybind) is used; not for the UI toggle key
 	})
 
 	local Main = Window:AddTab({ Title = "Main", Icon = "home" })
@@ -9301,10 +9330,22 @@ function Window.new(props)
 		self._maid:GiveTask(camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale))
 	end
 
+	--== Silent start ==--
+	-- Nothing pops up: no loading screen, the window starts hidden (toggle
+	-- key / mobile button opens it) and autoload doesn't notify.
+	self.Silent = props.Silent == true
+	-- Toasts when the player's own keybinds (AddKeybind) are used; the UI
+	-- toggle key never notifies. Off in Silent mode.
+	self._keybindNotify = props.KeybindNotify ~= false
+	if self.Silent then
+		self.Visible = false
+		main.Visible = false
+	end
+
 	--== Loading screen ==--
-	-- On unless the script passes LoadingScreen = false; the player can also
-	-- turn it off from the settings tab (saved in ConfigFolder/loading.txt).
-	self._loadingAllowed = props.LoadingScreen ~= false
+	-- On unless the script passes LoadingScreen = false (or Silent); the
+	-- player can also turn it off from the settings tab (ConfigFolder/loading.txt).
+	self._loadingAllowed = props.LoadingScreen ~= false and not self.Silent
 	if self._loadingAllowed and self:GetLoadingScreenEnabled() then
 		self._loading = true
 		main.Visible = false
@@ -9432,6 +9473,15 @@ end
 
 function Window:Toggle()
 	self:SetVisible(not self.Visible)
+end
+
+-- Whether keybind toasts are on for this window (off in Silent mode).
+function Window:GetKeybindNotify(): boolean
+	return self._keybindNotify and not self.Silent
+end
+
+function Window:SetKeybindNotify(enabled: boolean)
+	self._keybindNotify = enabled
 end
 
 -- Ends the loading screen now (e.g. once your own setup is done).
@@ -9723,7 +9773,9 @@ function Window:LoadAutoloadConfig(): boolean
 	end
 	local ok, err = self:LoadConfig(name)
 	if ok then
-		self:Notify({ Title = "Config loaded", Content = `Auto-loaded "{name}"`, Icon = "folder" })
+		if not self.Silent then
+			self:Notify({ Title = "Config loaded", Content = `Auto-loaded "{name}"`, Icon = "folder" })
+		end
 	else
 		warn(`[MD3] autoload failed: {err}`)
 	end
@@ -9845,6 +9897,7 @@ function Window:AddSettingsTab(props)
 		Description = "Shows / hides this window",
 		Default = self._toggleKey,
 		Flag = "MD3_ToggleKey",
+		Notify = false, -- the window toggle key never shows a toast
 		ChangedCallback = function(key)
 			self:SetToggleKey(key)
 		end,

@@ -22,6 +22,8 @@ local Window = MD3:CreateWindow({
     ConfigFolder = "MyHub",              -- 設定檔存放資料夾（executor workspace）
     IconStyle = "Outlined",              -- 圖標樣式："Outlined"（預設）| "Filled" | "Round" | "Sharp"
     LoadingScreen = true,                -- 啟動時的載入動畫；false 關閉
+    Silent = false,                      -- true：安靜啟動（見下方）
+    KeybindNotify = true,                -- 按自己設定的快捷鍵時跳通知；false 全部關閉
 })
 
 local Main = Window:AddTab({ Title = "Main", Icon = "home" })
@@ -53,8 +55,10 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
   - **開關**：腳本裡 `LoadingScreen = false` 直接關掉（設定頁也不會出現開關）；玩家可以在設定頁 Interface 區塊用「Loading animation」開關，存在 `ConfigFolder/loading.txt`，**下次執行**生效（程式裡用 `Window:SetLoadingScreenEnabled(bool)`／`GetLoadingScreenEnabled()`）。
   - **自訂**：`LoadingScreen = { Title = "My Hub", Subtitle = "Loading...", Icon = "widgets", Duration = 2 }`（`Duration` 是最少顯示秒數）。
   - `Window.Loaded` 在視窗出現後觸發一次、`Window.IsLoaded` 表示是否載入完成（`if not Window.IsLoaded then Window.Loaded:Wait() end`）；`Window:SkipLoading()` 立刻結束載入動畫。
+- **安靜啟動（`Silent = true`）**：啟動時什麼都不跳出來——不播載入動畫、視窗一開始先藏著（按切換鍵，或觸控裝置上的浮動按鈕打開）、`LoadAutoloadConfig()` 自動載入設定檔時照樣套用但不跳「Config loaded」通知、快捷鍵也不跳通知。其他功能照常運作；你自己呼叫的 `Window:Notify(...)` 還是會顯示，HUD 也照常顯示（不想要就別建立，或用 `SetHUDVisible(false)`）。`Window.Silent` 可以讀取目前是否為安靜模式。
 - **可調大小**：拖右下角的把手縮放視窗（最小 420×280），放開後自動記住，下次執行會還原（存在 `ConfigFolder/window.json`；`RememberSize = false` 可關閉）。程式裡用 `Window:SetSize(w, h)`／`GetSize()`／`ResetSize()`；設定頁也有「Reset window size」。
-- **切換鍵**（預設 RightShift）隱藏／顯示；關閉鈕會跳出 M3 對話框讓你選「隱藏」或「卸載（Unload）」。
+- **切換鍵**（預設 RightShift）隱藏／顯示（不跳通知）；關閉鈕會跳出 M3 對話框讓你選「隱藏」或「卸載（Unload）」。
+- **快捷鍵通知**：按下自己用 `AddKeybind` 設定的快捷鍵時，右下角跳一個 2 秒的小通知：Toggle 模式「Fly — Enabled (F)」／「Disabled (F)」、Press 模式「Dash — Activated (Q)」；Hold 模式預設不跳。同一個快捷鍵連按時舊的通知會先關掉。每個快捷鍵可用 `Notify = true/false`（或 `:SetNotify()`）單獨設定；整個視窗用 `KeybindNotify = false`（或 `Window:SetKeybindNotify(false)`）全部關掉；安靜模式不跳。UI 切換鍵（含設定頁的「Toggle UI」）永遠不跳。
 - **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
 - **防偵測／相容性**：ScreenGui 優先放進 `gethui()`，其次 `CoreGui`，最後才是 `PlayerGui`；有 `syn.protect_gui` / `protectgui` 會自動套用；ScreenGui 名稱隨機。
 - **重複執行不會疊視窗**：同一個 `Title`（或 `Id`）的視窗再次建立時，舊的會先被卸載（透過 `getgenv()` 記錄）。
@@ -75,7 +79,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 | `AddSlider` | `Min`、`Max`、`Step`、`Default`、`Suffix` | `number`（右側數值可直接輸入） |
 | `AddInput` | `Placeholder`、`Default`、`Numeric`、`Finished`、`ClearOnSubmit` | `string` |
 | `AddDropdown` | `Options`、`Default`、`Multi`、`Searchable` | 單選 `string`／多選 `{string}`；`:SetOptions(list)` 更新選項 |
-| `AddKeybind` | `Default`、`Mode`（`Press`/`Toggle`/`Hold`）、`Callback`、`ChangedCallback` | `Enum.KeyCode`（點一下再按鍵；Esc 取消、Backspace 清除） |
+| `AddKeybind` | `Default`、`Mode`（`Press`/`Toggle`/`Hold`）、`Callback`、`ChangedCallback`、`Notify`（按下時跳通知，Hold 預設關） | `Enum.KeyCode`（點一下再按鍵；Esc 取消、Backspace 清除） |
 | `AddColorPicker` | `Default`、`Transparency`（給了就多一條透明度條）、`Callback` | `Color3`（SV 方塊 + 色相條 + HEX 輸入）；有透明度時 Callback 收到 `(color, transparency)`、`.Transparency` 為目前值、`:SetTransparency(t)` |
 | `AddLabel` | 文字或 `{ Text, Color }` | `:Set(text)` |
 | `AddParagraph` | `Title`、`Content` | `:Set({ Title, Content })` |
