@@ -112,7 +112,13 @@ Circular.__index = Circular
 local EPS = 0.004
 
 local function arcSequence(value: number)
-	value = math.clamp(value, EPS, 1 - EPS)
+	if value <= 0 then
+		return NumberSequence.new(1)
+	elseif value >= 1 then
+		return NumberSequence.new(0)
+	end
+	-- Keypoint times must be strictly increasing, so keep value-EPS above 0.
+	value = math.clamp(value, 2 * EPS, 1 - EPS)
 	return NumberSequence.new({
 		NumberSequenceKeypoint.new(0, 0),
 		NumberSequenceKeypoint.new(value - EPS, 0),

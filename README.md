@@ -21,6 +21,32 @@
    `src/` 會同步進 `ReplicatedStorage.MaterialDesign3`，`example/` 會同步成 `StarterPlayerScripts.MD3Example` 示範腳本。
 2. 也可以直接把 `src` 資料夾整個丟進你自己的專案（例如 `ReplicatedStorage`），並依需求調整 `default.project.json`。
 
+### 從外部載入（單檔版）
+
+`dist/MaterialDesign3.luau` 是把整個 `src/` 打包成的單一檔案，執行後回傳 `MD3` 表，不依賴任何 `script` 階層：
+
+```lua
+-- source 是 dist/MaterialDesign3.luau 的完整內容，用你的環境能用的方式取得
+local MD3 = loadstring(source)()
+```
+
+原始檔網址：
+
+```
+https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/dist/MaterialDesign3.luau
+```
+
+在一般 Roblox 遊戲裡要注意：客戶端（LocalScript）不能發 HTTP 請求也不能 `loadstring`，只有伺服器能用 `HttpService:GetAsync` 且須開啟 `ServerScriptService.LoadStringEnabled`。所以要在遊戲的客戶端 UI 使用，最穩的做法是把這個單檔內容貼進一個 ModuleScript（放在 `ReplicatedStorage`）然後 `require` 它。
+
+修改 `src/` 之後重新打包並跑冒煙測試：
+
+```bash
+python3 tools/bundle.py                 # 產生 dist/MaterialDesign3.luau
+python3 tools/smoke/run.py              # 需要 luau CLI，可用 LUAU=/path/to/luau 指定
+```
+
+冒煙測試會用 `loadstring` 載入打包檔（跟外部載入同一條路徑），在模擬的 Roblox API 上建立並操作全部 16 個元件，再切換主題。
+
 ## 快速開始
 
 ```lua
