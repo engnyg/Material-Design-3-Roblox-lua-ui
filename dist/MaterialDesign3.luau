@@ -4414,7 +4414,24 @@ function Theme:_build()
 	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
 	colors.IconAccent = overrides.IconAccent or overrides.Icon or colors.Primary
 	colors.IconSelected = overrides.IconSelected or overrides.Icon or colors.OnSecondaryContainer
+
+	-- Transparency per role, cascading the same way as the colors.
+	local t = self._transparency
+	local transparency = table.clone(t)
+	transparency.OnSurfaceVariant = t.OnSurfaceVariant or t.OnSurface
+	transparency.OnBackground = t.OnBackground or t.OnSurface
+	transparency.Icon = t.Icon or transparency.OnSurfaceVariant
+	transparency.IconAccent = t.IconAccent or t.Icon
+	transparency.IconSelected = t.IconSelected or t.Icon
+	self.Transparency = transparency
 	return colors
+end
+
+-- Transparency (0 = opaque, 1 = invisible) set for a color role, or nil
+-- when the role is left opaque. Window chrome applies it through Themer to
+-- the matching BackgroundTransparency / TextTransparency / ... property.
+function Theme:GetTransparency(role: string): number?
+	return self.Transparency[role]
 end
 
 -- One-call helpers for the three colors people most want to change.
@@ -4437,6 +4454,7 @@ function Theme.new(seed: Color3?, mode: string?)
 	self.Mode = mode or "Light"
 	self._palettes = buildPalettes(self.Seed)
 	self._overrides = {}
+	self._transparency = {}
 	self.Colors = self:_build()
 	self.Changed = Signal.new()
 	return self
@@ -4465,18 +4483,47 @@ end
 
 --== Overrides (theme editor) ==--
 
+local function cleanTransparency(value)
+	if type(value) ~= "number" then
+		return nil
+	end
+	value = math.clamp(value, 0, 1)
+	return if value > 0 then value else nil
+end
+
 -- Pins one color role (e.g. "Primary", "Surface", "Icon") to a fixed
--- color, on top of the seed-generated scheme; nil returns it to generated.
--- Survives SetSeedColor / SetMode.
-function Theme:SetOverride(role: string, color: Color3?)
+-- color, on top of the seed-generated scheme. Survives SetSeedColor /
+-- SetMode. `transparency` (0-1, optional) sets how see-through the role is;
+-- leaving it out keeps the current one. color = nil resets the role
+-- entirely (generated color, opaque).
+function Theme:SetOverride(role: string, color: Color3?, transparency: number?)
 	self._overrides[role] = color
+	if color == nil then
+		self._transparency[role] = nil
+	elseif transparency ~= nil then
+		self._transparency[role] = cleanTransparency(transparency)
+	end
 	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
 
--- Replaces all overrides at once ({ [role] = Color3 }).
-function Theme:SetOverrides(overrides: { [string]: Color3 }?)
+-- Sets only a role's transparency (0-1; 0 or nil = opaque), keeping its color.
+function Theme:SetTransparency(role: string, transparency: number?)
+	self._transparency[role] = cleanTransparency(transparency)
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+-- Replaces all overrides at once: colors ({ [role] = Color3 }) and,
+-- optionally, transparencies ({ [role] = number }; nil keeps the current).
+function Theme:SetOverrides(overrides: { [string]: Color3 }?, transparency: { [string]: number }?)
 	self._overrides = table.clone(overrides or {})
+	if transparency then
+		self._transparency = {}
+		for role, value in transparency do
+			self._transparency[role] = cleanTransparency(value)
+		end
+	end
 	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
@@ -4485,22 +4532,32 @@ function Theme:GetOverrides(): { [string]: Color3 }
 	return table.clone(self._overrides)
 end
 
+function Theme:GetTransparencies(): { [string]: number }
+	return table.clone(self._transparency)
+end
+
 function Theme:IsOverridden(role: string): boolean
-	return self._overrides[role] ~= nil
+	return self._overrides[role] ~= nil or self._transparency[role] ~= nil
 end
 
 function Theme:ClearOverrides()
-	self:SetOverrides({})
+	self:SetOverrides({}, {})
 end
 
 -- Plain table describing the theme (hex strings), e.g. to share as JSON:
--- { Seed = "6750a4", Mode = "Dark", Overrides = { Primary = "ff0000" } }
+-- { Seed = "6750a4", Mode = "Dark", Overrides = { Primary = "ff0000" },
+--   Transparency = { Surface = 0.3 } }
 function Theme:Export()
 	local overrides = {}
 	for role, color in self._overrides do
 		overrides[role] = color:ToHex()
 	end
-	return { Seed = self.Seed:ToHex(), Mode = self.Mode, Overrides = overrides }
+	return {
+		Seed = self.Seed:ToHex(),
+		Mode = self.Mode,
+		Overrides = overrides,
+		Transparency = table.clone(self._transparency),
+	}
 end
 
 -- Applies a table made by Export (one Changed event).
@@ -4518,6 +4575,10 @@ function Theme:Import(data)
 		overrides[role] = Color3.fromHex(hex)
 	end
 	self._overrides = overrides
+	self._transparency = {}
+	for role, value in data.Transparency or {} do
+		self._transparency[role] = cleanTransparency(value)
+	end
 	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
@@ -5471,7 +5532,10 @@ function Config.Encode(flags): string
 	local data = {}
 	for flag, element in flags do
 		if element.Save ~= false then
-			data[flag] = Config.Serialize(element.Value)
+			-- Elements that store more than .Value (e.g. a color picker's
+			-- transparency) provide GetSaveValue; Set accepts what it returns.
+			local value = if element.GetSaveValue then element:GetSaveValue() else element.Value
+			data[flag] = Config.Serialize(value)
 		end
 	end
 	return HttpService:JSONEncode(data)
@@ -5702,12 +5766,15 @@ function Base.CanShowIcon(icon): boolean
 	return Assets.IsImage(icon) or Icons.CanRender(icon) or (type(icon) == "string" and Icons.Codepoints[icon] ~= nil)
 end
 
--- Colors an icon made by Base.Glyph, whichever kind it is.
-function Base.SetIconColor(icon: GuiObject, color: Color3)
+-- Colors an icon made by Base.Glyph, whichever kind it is (optionally
+-- with a transparency, 0 = solid).
+function Base.SetIconColor(icon: GuiObject, color: Color3, transparency: number?)
 	if icon:IsA("ImageLabel") then
 		icon.ImageColor3 = color
+		icon.ImageTransparency = transparency or 0
 	else
 		icon.TextColor3 = color
+		icon.TextTransparency = transparency or 0
 	end
 end
 
@@ -5959,6 +6026,11 @@ loaders[newNode("ColorPicker", N_Window_Elements)] = function(script, require)
 
 	Click the swatch to expand a saturation/value square, a hue bar and a
 	hex field.
+
+	Transparency: pass Transparency = 0..1 (or Alpha = true) to add an
+	opacity bar. The callback then gets (color, transparency), .Transparency
+	holds the current value, :Set accepts { Color = c, Transparency = t },
+	and both are saved in configs.
 ]]
 local UserInputService = game:GetService("UserInputService")
 
@@ -5970,6 +6042,7 @@ local Shape = require(Root.Core.Shape)
 
 local PICKER_HEIGHT = 128
 local HUE_WIDTH = 16
+local ALPHA_HEIGHT = 16
 
 local function isPress(input)
 	return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
@@ -5984,7 +6057,17 @@ return function(container, props)
 	local window = element._window
 	local themer = window._themer
 
+	local alphaEnabled = props.Transparency ~= nil or props.Alpha == true
+	element.Transparency = if alphaEnabled then math.clamp(props.Transparency or 0, 0, 1) else 0
+
 	local function normalize(value)
+		if type(value) == "table" then
+			-- { Color = Color3, Transparency = number } (also what configs store)
+			if alphaEnabled and type(value.Transparency) == "number" then
+				element.Transparency = math.clamp(value.Transparency, 0, 1)
+			end
+			value = value.Color
+		end
 		if typeof(value) == "Color3" then
 			return value
 		elseif type(value) == "string" then
@@ -6016,8 +6099,10 @@ return function(container, props)
 		Parent = swatch,
 	}, { Color = "Outline" })
 
+	-- Rows below the square: [opacity bar] then hex / RGB.
+	local infoY = PICKER_HEIGHT + 10 + (if alphaEnabled then ALPHA_HEIGHT + 10 else 0)
 	local panel = row.Extra(false)
-	panel.Size = UDim2.new(1, 0, 0, PICKER_HEIGHT + 40)
+	panel.Size = UDim2.new(1, 0, 0, infoY + 30)
 	panel.AutomaticSize = Enum.AutomaticSize.None
 
 	-- Saturation (x) / value (y) square: hue background, a white->clear
@@ -6094,8 +6179,47 @@ return function(container, props)
 	}
 	themer:Bind(Create("UIStroke") { Thickness = 1, Parent = hueCursor }, { Color = "Outline" })
 
+	-- Opacity bar: the current color fading from see-through (left) to
+	-- solid (right) over an outline-colored track, so the fade is visible.
+	local alphaBar, alphaFill, alphaCursor = nil, nil, nil
+	if alphaEnabled then
+		alphaBar = Create("TextButton") {
+			Name = "Opacity",
+			AutoButtonColor = false,
+			Text = "",
+			Position = UDim2.fromOffset(0, PICKER_HEIGHT + 10),
+			Size = UDim2.new(1, 0, 0, ALPHA_HEIGHT),
+			BorderSizePixel = 0,
+			Parent = panel,
+		}
+		Shape.Corner(Shape.Full, alphaBar)
+		themer:Bind(alphaBar, { BackgroundColor3 = "OutlineVariant" })
+		alphaFill = Create("Frame") {
+			Name = "Fill",
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+			Parent = alphaBar,
+			[1] = Create("UIGradient") {
+				Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }),
+			},
+		}
+		Shape.Corner(Shape.Full, alphaFill)
+		alphaCursor = Create("Frame") {
+			Name = "Cursor",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(1, 0.5),
+			Size = UDim2.fromOffset(6, ALPHA_HEIGHT + 6),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BorderSizePixel = 0,
+			ZIndex = 3,
+			Parent = alphaBar,
+			[1] = Create("UICorner") { CornerRadius = UDim.new(1, 0) },
+		}
+		themer:Bind(Create("UIStroke") { Thickness = 1, Parent = alphaCursor }, { Color = "Outline" })
+	end
+
 	local hexBox = Base.Field(themer, "TextBox", panel, UDim2.fromOffset(120, 28))
-	hexBox.Position = UDim2.fromOffset(0, PICKER_HEIGHT + 10)
+	hexBox.Position = UDim2.fromOffset(0, infoY)
 	hexBox.ClearTextOnFocus = false
 	hexBox.TextXAlignment = Enum.TextXAlignment.Left
 	Typography.Apply(hexBox, "BodyMedium")
@@ -6105,7 +6229,7 @@ return function(container, props)
 	local rgbLabel = Create("TextLabel") {
 		Name = "RGB",
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(132, PICKER_HEIGHT + 10),
+		Position = UDim2.fromOffset(132, infoY),
 		Size = UDim2.new(1, -132, 0, 28),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = panel,
@@ -6116,6 +6240,7 @@ return function(container, props)
 	local function paint()
 		local color = element.Value
 		swatch.BackgroundColor3 = color
+		swatch.BackgroundTransparency = element.Transparency
 		svBox.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
 		svCursor.BackgroundColor3 = color
 		svCursor.Position = UDim2.fromScale(sat, 1 - val)
@@ -6127,6 +6252,31 @@ return function(container, props)
 			math.round(color.G * 255),
 			math.round(color.B * 255)
 		)
+		if alphaEnabled then
+			alphaFill.BackgroundColor3 = color
+			alphaCursor.Position = UDim2.fromScale(1 - element.Transparency, 0.5)
+			rgbLabel.Text ..= string.format(" · Opacity %d%%", math.round((1 - element.Transparency) * 100))
+		end
+	end
+
+	if alphaEnabled then
+		-- Callback / Changed get (color, transparency).
+		function element:_emit(color)
+			self.Changed:Fire(color, self.Transparency)
+			if self._callback then
+				window:_call(self._callback, color, self.Transparency)
+			end
+		end
+
+		-- What configs store for this picker.
+		function element:GetSaveValue()
+			return { Color = self.Value, Transparency = self.Transparency }
+		end
+	end
+
+	-- Sets only the transparency (0 = solid, 1 = invisible).
+	function element:SetTransparency(transparency: number, silent: boolean?)
+		self:Set({ Color = self.Value, Transparency = transparency }, silent)
 	end
 
 	local function commit()
@@ -6159,6 +6309,9 @@ return function(container, props)
 		elseif dragging == "hue" then
 			local pos, size = hueBar.AbsolutePosition, hueBar.AbsoluteSize
 			hue = math.clamp((input.Position.Y - pos.Y) / math.max(size.Y, 1), 0, 0.999)
+		elseif dragging == "alpha" then
+			local pos, size = alphaBar.AbsolutePosition, alphaBar.AbsoluteSize
+			element.Transparency = 1 - math.clamp((input.Position.X - pos.X) / math.max(size.X, 1), 0, 1)
 		end
 		commit()
 	end
@@ -6175,6 +6328,14 @@ return function(container, props)
 			updateFrom(input)
 		end
 	end))
+	if alphaBar then
+		element._maid:GiveTask(alphaBar.InputBegan:Connect(function(input)
+			if isPress(input) then
+				dragging = "alpha"
+				updateFrom(input)
+			end
+		end))
+	end
 	element._maid:GiveTask(UserInputService.InputChanged:Connect(function(input)
 		if dragging and isMove(input) then
 			updateFrom(input)
@@ -6222,7 +6383,6 @@ local Create = require(Root.Util.Create)
 local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
-local Icons = require(Root.Core.Icons)
 
 local ITEM_HEIGHT = 32
 local MAX_LIST_HEIGHT = 6 * (ITEM_HEIGHT + 2)
@@ -6347,16 +6507,25 @@ return function(container, props)
 
 	local function paint()
 		local c = theme.Colors
+		local function alpha(role)
+			return theme:GetTransparency(role) or 0
+		end
 		fieldLabel.Text = displayText()
-		fieldLabel.TextColor3 = (multi and #element.Value > 0 or not multi and element.Value ~= nil) and c.OnSurface
-			or c.OnSurfaceVariant
+		local hasValue = if multi then #element.Value > 0 else element.Value ~= nil
+		local fieldRole = if hasValue then "OnSurface" else "OnSurfaceVariant"
+		fieldLabel.TextColor3 = c[fieldRole]
+		fieldLabel.TextTransparency = alpha(fieldRole)
 		for option, item in items do
 			local selected = isSelected(option)
+			local labelRole = if selected then "OnSecondaryContainer" else "OnSurface"
 			item.Button.BackgroundColor3 = c.SecondaryContainer
-			item.Button.BackgroundTransparency = selected and 0 or 1
-			item.Label.TextColor3 = selected and c.OnSecondaryContainer or c.OnSurface
+			item.Button.BackgroundTransparency = if selected then alpha("SecondaryContainer") else 1
+			item.Label.TextColor3 = c[labelRole]
+			item.Label.TextTransparency = alpha(labelRole)
+			-- Hidden through transparency, not Visible: Icons manages Visible
+			-- and would show the check again once the icon images load.
 			item.Check.TextColor3 = c.OnSecondaryContainer
-			item.Check.Visible = selected and Icons.CanRender("check")
+			item.Check.TextTransparency = if selected then alpha("OnSecondaryContainer") else 1
 		end
 	end
 
@@ -7342,21 +7511,27 @@ function Tab.new(window, props)
 end
 
 function Tab:_paint()
-	local c = self._window.Theme.Colors
+	local theme = self._window.Theme
+	local c = theme.Colors
+	local function alpha(role)
+		return theme:GetTransparency(role) or 0
+	end
 	local active = self._window.SelectedTab == self
 	self._button.BackgroundColor3 = c.SecondaryContainer
 	TweenService:Create(self._button, Motion.Standard(Motion.Duration.Short3), {
-		BackgroundTransparency = active and 0 or 1,
+		BackgroundTransparency = if active then alpha("SecondaryContainer") else 1,
 	}):Play()
-	local content = active and c.OnSecondaryContainer or c.OnSurfaceVariant
-	self._label.TextColor3 = content
+	local textRole = if active then "OnSecondaryContainer" else "OnSurfaceVariant"
+	self._label.TextColor3 = c[textRole]
+	self._label.TextTransparency = alpha(textRole)
 	local iconColor = self._iconColor
 	if typeof(iconColor) == "Color3" then
 		Base.SetIconColor(self._icon, iconColor)
 	elseif type(iconColor) == "string" and c[iconColor] then
-		Base.SetIconColor(self._icon, c[iconColor])
+		Base.SetIconColor(self._icon, c[iconColor], alpha(iconColor))
 	else
-		Base.SetIconColor(self._icon, active and c.IconSelected or c.Icon)
+		local iconRole = if active then "IconSelected" else "Icon"
+		Base.SetIconColor(self._icon, c[iconRole], alpha(iconRole))
 	end
 	self._stateLayer:SetColor(c.OnSurface)
 end
@@ -7414,7 +7589,22 @@ loaders[newNode("Themer", N_Window)] = function(script, require)
 local Themer = {}
 Themer.__index = Themer
 
-local function apply(inst, map, colors)
+-- Color property -> the transparency property that goes with it. A role's
+-- theme transparency (Theme:SetTransparency / the theme editor's opacity
+-- bar) is applied there too.
+local TRANSPARENCY_PROP = {
+	BackgroundColor3 = "BackgroundTransparency",
+	TextColor3 = "TextTransparency",
+	ImageColor3 = "ImageTransparency",
+	Color = "Transparency", -- UIStroke
+	ScrollBarImageColor3 = "ScrollBarImageTransparency",
+}
+
+-- `touched[prop]` remembers transparency this Themer set, so it can be
+-- put back to opaque when the role's transparency is removed (and is left
+-- alone otherwise, e.g. a label that's transparent on purpose).
+local function apply(inst, map, theme, touched)
+	local colors = theme.Colors
 	for prop, role in map do
 		if type(role) == "function" then
 			inst[prop] = role(colors)
@@ -7422,6 +7612,17 @@ local function apply(inst, map, colors)
 			inst[prop] = role
 		else
 			inst[prop] = colors[role]
+			local transparencyProp = TRANSPARENCY_PROP[prop]
+			if transparencyProp then
+				local value = theme:GetTransparency(role)
+				if value then
+					inst[transparencyProp] = value
+					touched[transparencyProp] = true
+				elseif touched[transparencyProp] then
+					inst[transparencyProp] = 0
+					touched[transparencyProp] = nil
+				end
+			end
 		end
 	end
 end
@@ -7433,6 +7634,7 @@ function Themer.new(theme)
 	-- Lua wrapper, which would silently drop weak-keyed bindings. Entries
 	-- are removed when the instance is destroyed instead.
 	self._bindings = {}
+	self._touched = {}
 	self._cleanup = {}
 	self._connection = theme.Changed:Connect(function()
 		self:Refresh()
@@ -7448,16 +7650,18 @@ function Themer:Bind(inst: Instance, map)
 		end
 	else
 		self._bindings[inst] = map
+		self._touched[inst] = {}
 		self._cleanup[inst] = inst.Destroying:Connect(function()
 			self:Unbind(inst)
 		end)
 	end
-	apply(inst, map, self.Theme.Colors)
+	apply(inst, map, self.Theme, self._touched[inst])
 	return inst
 end
 
 function Themer:Unbind(inst: Instance)
 	self._bindings[inst] = nil
+	self._touched[inst] = nil
 	local connection = self._cleanup[inst]
 	if connection then
 		self._cleanup[inst] = nil
@@ -7466,10 +7670,9 @@ function Themer:Unbind(inst: Instance)
 end
 
 function Themer:Refresh()
-	local colors = self.Theme.Colors
 	for inst, map in self._bindings do
 		if inst.Parent then
-			apply(inst, map, colors)
+			apply(inst, map, self.Theme, self._touched[inst])
 		end
 	end
 end
@@ -7481,6 +7684,7 @@ function Themer:Destroy()
 	end
 	table.clear(self._cleanup)
 	table.clear(self._bindings)
+	table.clear(self._touched)
 end
 
 return Themer
@@ -7500,7 +7704,8 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		TextColor = nil,                   -- color of all text (Color3); secondary text follows it
 		AppIconColor = nil,                -- just the title-bar icon: theme role or Color3
 		Logo = "https://.../logo.png",     -- colored image shown instead of Icon (not tinted)
-		Size = UDim2.fromOffset(600, 420),
+		Size = UDim2.fromOffset(600, 420),  -- starting size; drag the bottom-right corner to resize
+		RememberSize = true,               -- restore the size the user dragged to last time
 		Mode = "Dark",                     -- "Light" | "Dark"
 		Seed = nil,                        -- same as ThemeColor
 		ToggleKey = Enum.KeyCode.RightShift,
@@ -7542,6 +7747,7 @@ local Base = require(script.Parent.Elements.Base)
 local TOP_BAR_HEIGHT = 56
 local NAV_WIDTH = 168
 local DEFAULT_SIZE = UDim2.fromOffset(600, 420)
+local MIN_SIZE = Vector2.new(420, 280) -- smallest size the resize handle allows
 
 local Window = {}
 Window.__index = Window
@@ -7625,6 +7831,8 @@ function Window.new(props)
 	self._maid = Maid.new()
 	self._toggleKey = toKeyCode(props.ToggleKey or props.Keybind) or Enum.KeyCode.RightShift
 	self._size = props.Size or DEFAULT_SIZE
+	self._defaultSize = self._size
+	self._rememberSize = props.RememberSize ~= false
 
 	-- Replace the window a previous run of the same script left behind.
 	local registry = Env.Registry()
@@ -7637,6 +7845,14 @@ function Window.new(props)
 	registry.Windows[self._registryKey] = self
 
 	self._configFolder = props.ConfigFolder or props.Folder or `MD3/{sanitize(self.Title)}`
+
+	-- The size the user resized the window to last time (window.json).
+	if self._rememberSize then
+		local saved = self:_readSavedSize()
+		if saved then
+			self._size = UDim2.fromOffset(saved.X, saved.Y)
+		end
+	end
 
 	-- Material icons as a sprite-sheet image, loaded the way NeverLose loads
 	-- its images (HttpGet -> writefile -> getcustomasset). Runs in the
@@ -7871,6 +8087,76 @@ function Window.new(props)
 	themer:Bind(pages, { BackgroundColor3 = "SurfaceContainerLow" })
 	self._pages = pages
 
+	--== Resize handle (bottom-right corner) ==--
+	local grip = Create("TextButton") {
+		Name = "Resize",
+		AutoButtonColor = false,
+		Text = "",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.fromScale(1, 1),
+		Size = UDim2.fromOffset(28, 28),
+		ZIndex = 20,
+		Parent = main,
+	}
+	-- Two diagonal strokes, the usual "drag to resize" grip: a long one and
+	-- a short one nearer the corner.
+	for _, spec in { { length = 12, inset = 11 }, { length = 6, inset = 7 } } do
+		local stroke = Create("Frame") {
+			Name = "Stroke",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(1, -spec.inset, 1, -spec.inset),
+			Size = UDim2.fromOffset(spec.length, 2),
+			Rotation = -45,
+			BorderSizePixel = 0,
+			ZIndex = 21,
+			Parent = grip,
+			[1] = Create("UICorner") { CornerRadius = UDim.new(1, 0) },
+		}
+		themer:Bind(stroke, { BackgroundColor3 = "Outline" })
+	end
+	self._grip = grip
+
+	do
+		local resizing, startInput, startSize, startPos = false, nil, nil, nil
+		self._maid:GiveTask(grip.InputBegan:Connect(function(input)
+			if isPress(input) and not self.Minimized then
+				resizing = true
+				startInput = input.Position
+				startSize = Vector2.new(self._size.X.Offset, self._size.Y.Offset)
+				startPos = main.Position
+			end
+		end))
+		self._maid:GiveTask(UserInputService.InputChanged:Connect(function(input)
+			if not resizing or not isMove(input) then
+				return
+			end
+			-- Screen pixels -> unscaled window pixels (UIScale shrinks it on phones).
+			local scale = uiScale.Scale
+			local delta = (input.Position - startInput) / scale
+			local camera = workspace.CurrentCamera
+			local viewport = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
+			local width = math.clamp(startSize.X + delta.X, MIN_SIZE.X, math.max(MIN_SIZE.X, viewport.X / scale - 24))
+			local height = math.clamp(startSize.Y + delta.Y, MIN_SIZE.Y, math.max(MIN_SIZE.Y, viewport.Y / scale - 24))
+			self._size = UDim2.fromOffset(math.round(width), math.round(height))
+			main.Size = self._size
+			-- The window is centered on its Position; move it by half the growth
+			-- so the top-left corner stays put and the grip follows the pointer.
+			main.Position = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + (width - startSize.X) * scale / 2,
+				startPos.Y.Scale,
+				startPos.Y.Offset + (height - startSize.Y) * scale / 2
+			)
+		end))
+		self._maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+			if resizing and isPress(input) then
+				resizing = false
+				self:_saveSize()
+			end
+		end))
+	end
+
 	--== Notifications ==--
 	self._notifier = Notifier.new(gui, themer)
 
@@ -8044,6 +8330,7 @@ function Window:Minimize(minimized: boolean?)
 	self.Minimized = minimized
 	local main = self.Instance
 	local ti = Motion.Emphasized(Motion.Duration.Medium2)
+	self._grip.Visible = not minimized
 	if minimized then
 		local tween = TweenService:Create(main, ti, {
 			Size = UDim2.new(self._size.X.Scale, self._size.X.Offset, 0, TOP_BAR_HEIGHT),
@@ -8069,6 +8356,55 @@ function Window:SetIconStyle(style: string): (string?, string?)
 		return IconImages.CurrentStyle, err
 	end
 	return IconImages.CurrentStyle
+end
+
+-- Resizes the window (unscaled pixels; the resize handle does the same).
+-- Accepts a UDim2 offset size or width, height numbers.
+function Window:SetSize(width, height: number?)
+	if type(width) ~= "number" then -- a UDim2
+		width, height = width.X.Offset, width.Y.Offset
+	end
+	self._size = UDim2.fromOffset(math.max(width, MIN_SIZE.X), math.max(height, MIN_SIZE.Y))
+	if not self.Minimized then
+		self.Instance.Size = self._size
+	end
+	self:_saveSize()
+end
+
+function Window:GetSize(): UDim2
+	return self._size
+end
+
+-- Back to the size given in CreateWindow (or the default).
+function Window:ResetSize()
+	self:SetSize(self._defaultSize)
+end
+
+function Window:_sizePath(): string
+	return `{self._configFolder}/window.json`
+end
+
+function Window:_saveSize()
+	if not (self._rememberSize and Env.CanUseFiles) then
+		return
+	end
+	Env.MakeFolder(self._configFolder)
+	Env.WriteFile(self:_sizePath(), HttpService:JSONEncode({
+		Width = self._size.X.Offset,
+		Height = self._size.Y.Offset,
+	}))
+end
+
+function Window:_readSavedSize(): Vector2?
+	local json = Env.ReadFile(self:_sizePath())
+	if not json then
+		return nil
+	end
+	local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
+	if ok and type(data) == "table" and type(data.Width) == "number" and type(data.Height) == "number" then
+		return Vector2.new(math.max(data.Width, MIN_SIZE.X), math.max(data.Height, MIN_SIZE.Y))
+	end
+	return nil
 end
 
 function Window:SetToggleKey(key)
@@ -8239,8 +8575,8 @@ function Window:AddSettingsTab(props)
 	-- Icon and text color: overrides (saved with the theme editor's
 	-- MD3_ThemeOverrides flag), shown as the current color when not custom.
 	local quick = {
-		{ Role = "Icon", Title = "Icon color", Auto = "Follows the text color", Set = "SetIconColor" },
-		{ Role = "OnSurface", Title = "Text color", Auto = "Generated from the theme color", Set = "SetTextColor" },
+		{ Role = "Icon", Title = "Icon color", Auto = "Follows the text color" },
+		{ Role = "OnSurface", Title = "Text color", Auto = "Generated from the theme color" },
 	}
 	local quickPickers = {}
 	local editingQuick = nil
@@ -8248,9 +8584,10 @@ function Window:AddSettingsTab(props)
 		quickPickers[entry.Role] = appearance:AddColorPicker({
 			Title = entry.Title,
 			Default = self.Theme.Colors[entry.Role],
-			Callback = function(color)
+			Transparency = self.Theme:GetTransparency(entry.Role) or 0,
+			Callback = function(color, transparency)
 				editingQuick = entry.Role
-				self.Theme[entry.Set](self.Theme, color)
+				self.Theme:SetOverride(entry.Role, color, transparency)
 				editingQuick = nil
 			end,
 		})
@@ -8259,17 +8596,20 @@ function Window:AddSettingsTab(props)
 		Title = "Reset icon & text colors",
 		Icon = "refresh",
 		Callback = function()
-			local overrides = self.Theme:GetOverrides()
-			overrides.Icon, overrides.OnSurface = nil, nil
-			self.Theme:SetOverrides(overrides)
+			local overrides, transparency = self.Theme:GetOverrides(), self.Theme:GetTransparencies()
+			for _, entry in quick do
+				overrides[entry.Role], transparency[entry.Role] = nil, nil
+			end
+			self.Theme:SetOverrides(overrides, transparency)
 		end,
 	})
 	local function refreshQuick()
 		for _, entry in quick do
 			local picker = quickPickers[entry.Role]
 			local color = self.Theme.Colors[entry.Role]
-			if editingQuick ~= entry.Role and picker.Value ~= color then
-				picker:Set(color, true)
+			local transparency = self.Theme:GetTransparency(entry.Role) or 0
+			if editingQuick ~= entry.Role and (picker.Value ~= color or picker.Transparency ~= transparency) then
+				picker:Set({ Color = color, Transparency = transparency }, true)
 			end
 			picker:SetDescription(if self.Theme:IsOverridden(entry.Role) then "Custom" else entry.Auto)
 		end
@@ -8321,6 +8661,14 @@ function Window:AddSettingsTab(props)
 		Flag = "MD3_ToggleKey",
 		ChangedCallback = function(key)
 			self:SetToggleKey(key)
+		end,
+	})
+	interface:AddButton({
+		Title = "Reset window size",
+		Description = "Drag the bottom-right corner to resize",
+		Icon = "fullscreen_exit",
+		Callback = function()
+			self:ResetSize()
 		end,
 	})
 	interface:AddButton({
@@ -8441,9 +8789,10 @@ function Window:AddThemeEditor(container)
 			Title = entry.Name,
 			Description = role,
 			Default = theme.Colors[role],
-			Callback = function(color)
+			Transparency = theme:GetTransparency(role) or 0,
+			Callback = function(color, transparency)
 				editing = role
-				theme:SetOverride(role, color)
+				theme:SetOverride(role, color, transparency)
 				editing = nil
 			end,
 		})
@@ -8452,8 +8801,9 @@ function Window:AddThemeEditor(container)
 	local function refresh()
 		for role, picker in pickers do
 			local color = theme.Colors[role]
-			if role ~= editing and picker.Value ~= color then
-				picker:Set(color, true)
+			local transparency = theme:GetTransparency(role) or 0
+			if role ~= editing and (picker.Value ~= color or picker.Transparency ~= transparency) then
+				picker:Set({ Color = color, Transparency = transparency }, true)
 			end
 			picker:SetDescription(if theme:IsOverridden(role) then `{role} · custom` else role)
 		end
@@ -8503,17 +8853,27 @@ function Window:AddThemeEditor(container)
 
 	-- Overrides go into configs as one flag (saving every picker would pin
 	-- generated colors too and stop them following the accent color).
-	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = theme:GetOverrides() }
+	-- Value: { Colors = { [role] = Color3 }, Transparency = { [role] = number } }
+	local function current()
+		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies() }
+	end
+	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = current() }
 	function overridesFlag:Set(value)
-		theme:SetOverrides(if type(value) == "table" then value else {})
+		if type(value) ~= "table" then
+			theme:ClearOverrides()
+		elseif value.Colors or value.Transparency then
+			theme:SetOverrides(value.Colors or {}, value.Transparency or {})
+		else
+			theme:SetOverrides(value, {}) -- configs saved before transparency existed
+		end
 	end
 	function overridesFlag:Get()
-		return theme:GetOverrides()
+		return current()
 	end
 	function overridesFlag:Destroy() end
 	self.Flags.MD3_ThemeOverrides = overridesFlag
 	self._maid:GiveTask(theme.Changed:Connect(function()
-		overridesFlag.Value = theme:GetOverrides()
+		overridesFlag.Value = current()
 	end))
 
 	return section

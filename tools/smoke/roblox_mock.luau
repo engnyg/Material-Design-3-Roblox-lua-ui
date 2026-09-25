@@ -170,6 +170,8 @@ function Vector2.new(x, y)
 end
 Vector2Meta.__sub = function(a, b) return Vector2.new(a.X - b.X, a.Y - b.Y) end
 Vector2Meta.__add = function(a, b) return Vector2.new(a.X + b.X, a.Y + b.Y) end
+Vector2Meta.__div = function(a, b) return Vector2.new(a.X / b, a.Y / b) end
+Vector2Meta.__eq = function(a, b) return a.X == b.X and a.Y == b.Y end
 
 TweenInfo = { new = function(...) return { ... } end }
 

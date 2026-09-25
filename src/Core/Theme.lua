@@ -177,7 +177,24 @@ function Theme:_build()
 	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
 	colors.IconAccent = overrides.IconAccent or overrides.Icon or colors.Primary
 	colors.IconSelected = overrides.IconSelected or overrides.Icon or colors.OnSecondaryContainer
+
+	-- Transparency per role, cascading the same way as the colors.
+	local t = self._transparency
+	local transparency = table.clone(t)
+	transparency.OnSurfaceVariant = t.OnSurfaceVariant or t.OnSurface
+	transparency.OnBackground = t.OnBackground or t.OnSurface
+	transparency.Icon = t.Icon or transparency.OnSurfaceVariant
+	transparency.IconAccent = t.IconAccent or t.Icon
+	transparency.IconSelected = t.IconSelected or t.Icon
+	self.Transparency = transparency
 	return colors
+end
+
+-- Transparency (0 = opaque, 1 = invisible) set for a color role, or nil
+-- when the role is left opaque. Window chrome applies it through Themer to
+-- the matching BackgroundTransparency / TextTransparency / ... property.
+function Theme:GetTransparency(role: string): number?
+	return self.Transparency[role]
 end
 
 -- One-call helpers for the three colors people most want to change.
@@ -200,6 +217,7 @@ function Theme.new(seed: Color3?, mode: string?)
 	self.Mode = mode or "Light"
 	self._palettes = buildPalettes(self.Seed)
 	self._overrides = {}
+	self._transparency = {}
 	self.Colors = self:_build()
 	self.Changed = Signal.new()
 	return self
@@ -228,18 +246,47 @@ end
 
 --== Overrides (theme editor) ==--
 
+local function cleanTransparency(value)
+	if type(value) ~= "number" then
+		return nil
+	end
+	value = math.clamp(value, 0, 1)
+	return if value > 0 then value else nil
+end
+
 -- Pins one color role (e.g. "Primary", "Surface", "Icon") to a fixed
--- color, on top of the seed-generated scheme; nil returns it to generated.
--- Survives SetSeedColor / SetMode.
-function Theme:SetOverride(role: string, color: Color3?)
+-- color, on top of the seed-generated scheme. Survives SetSeedColor /
+-- SetMode. `transparency` (0-1, optional) sets how see-through the role is;
+-- leaving it out keeps the current one. color = nil resets the role
+-- entirely (generated color, opaque).
+function Theme:SetOverride(role: string, color: Color3?, transparency: number?)
 	self._overrides[role] = color
+	if color == nil then
+		self._transparency[role] = nil
+	elseif transparency ~= nil then
+		self._transparency[role] = cleanTransparency(transparency)
+	end
 	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
 
--- Replaces all overrides at once ({ [role] = Color3 }).
-function Theme:SetOverrides(overrides: { [string]: Color3 }?)
+-- Sets only a role's transparency (0-1; 0 or nil = opaque), keeping its color.
+function Theme:SetTransparency(role: string, transparency: number?)
+	self._transparency[role] = cleanTransparency(transparency)
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+end
+
+-- Replaces all overrides at once: colors ({ [role] = Color3 }) and,
+-- optionally, transparencies ({ [role] = number }; nil keeps the current).
+function Theme:SetOverrides(overrides: { [string]: Color3 }?, transparency: { [string]: number }?)
 	self._overrides = table.clone(overrides or {})
+	if transparency then
+		self._transparency = {}
+		for role, value in transparency do
+			self._transparency[role] = cleanTransparency(value)
+		end
+	end
 	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end
@@ -248,22 +295,32 @@ function Theme:GetOverrides(): { [string]: Color3 }
 	return table.clone(self._overrides)
 end
 
+function Theme:GetTransparencies(): { [string]: number }
+	return table.clone(self._transparency)
+end
+
 function Theme:IsOverridden(role: string): boolean
-	return self._overrides[role] ~= nil
+	return self._overrides[role] ~= nil or self._transparency[role] ~= nil
 end
 
 function Theme:ClearOverrides()
-	self:SetOverrides({})
+	self:SetOverrides({}, {})
 end
 
 -- Plain table describing the theme (hex strings), e.g. to share as JSON:
--- { Seed = "6750a4", Mode = "Dark", Overrides = { Primary = "ff0000" } }
+-- { Seed = "6750a4", Mode = "Dark", Overrides = { Primary = "ff0000" },
+--   Transparency = { Surface = 0.3 } }
 function Theme:Export()
 	local overrides = {}
 	for role, color in self._overrides do
 		overrides[role] = color:ToHex()
 	end
-	return { Seed = self.Seed:ToHex(), Mode = self.Mode, Overrides = overrides }
+	return {
+		Seed = self.Seed:ToHex(),
+		Mode = self.Mode,
+		Overrides = overrides,
+		Transparency = table.clone(self._transparency),
+	}
 end
 
 -- Applies a table made by Export (one Changed event).
@@ -281,6 +338,10 @@ function Theme:Import(data)
 		overrides[role] = Color3.fromHex(hex)
 	end
 	self._overrides = overrides
+	self._transparency = {}
+	for role, value in data.Transparency or {} do
+		self._transparency[role] = cleanTransparency(value)
+	end
 	self.Colors = self:_build()
 	self.Changed:Fire(self)
 end

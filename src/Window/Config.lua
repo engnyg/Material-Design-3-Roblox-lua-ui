@@ -44,7 +44,10 @@ function Config.Encode(flags): string
 	local data = {}
 	for flag, element in flags do
 		if element.Save ~= false then
-			data[flag] = Config.Serialize(element.Value)
+			-- Elements that store more than .Value (e.g. a color picker's
+			-- transparency) provide GetSaveValue; Set accepts what it returns.
+			local value = if element.GetSaveValue then element:GetSaveValue() else element.Value
+			data[flag] = Config.Serialize(value)
 		end
 	end
 	return HttpService:JSONEncode(data)
