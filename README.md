@@ -86,12 +86,14 @@ imageLabel.Image = MD3.Assets.Resolve("https://raw.githubusercontent.com/<你>/<
 
 -- MD3 的 Icon / Logo 參數都會自動經過 Assets.Resolve
 local Window = MD3:CreateWindow({ Title = "My Hub", Logo = "https://.../logo.png" })
-Window:AddTab({ Title = "Combat", Icon = "https://.../sword.png" }) -- 圖片分頁圖示（會套主題色）
+Window:AddTab({ Title = "Combat", Icon = "https://.../sword.png" }) -- 圖片分頁圖示（會套主題色，圖片必須是白色）
 Window:Notify({ Title = "Hi", Image = "https://.../avatar.png" })      -- 彩色圖片（不套色）
 MD3.Button.new({ Text = "Go", Icon = "https://.../go.png" })
 
 MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭先背景下載
 ```
+
+> **`Icon` 圖片要用白色的。** `Icon` 會用 `ImageColor3` 套上主題色，而 `ImageColor3` 是「相乘」：白色 × 主題色 = 主題色，但黑色 × 任何顏色還是黑色。Google 官方 repo 的 PNG 圖標都是黑色的，直接拿來當 `Icon` 會一直是黑的——請改用白色版本（例如 [`assets/examples/extension.png`](assets/examples/extension.png)），或直接用 Material 圖標名稱（`Icon = "home"`）。彩色圖片請放 `Logo`／通知的 `Image`，這兩個不套色。
 
 `Assets.Resolve` 接受：網址（`http(s)://`）、`rbxassetid://…`／`rbxasset://…`／`rbxthumb://…`、純數字 ID（`123456` → `rbxassetid://123456`）、或 workspace 內已有的檔案路徑（`"MyHub/icon.png"`）。下載失敗（例如拿到 GitHub 的 404 HTML 頁）或 executor 不支援 `getcustomasset` 時回傳 `""`（不顯示圖片），不會丟錯。GitHub 圖片請用 `raw.githubusercontent.com/...` 或 `github.com/.../blob/main/xxx.png?raw=true` 這種直接下載的網址。
 
