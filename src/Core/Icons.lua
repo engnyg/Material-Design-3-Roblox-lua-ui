@@ -15,7 +15,9 @@
 		   or Asset Manager) and copy its rbxassetid.
 		3. MD3.Icons.SetFont(Font.new("rbxassetid://<your id>"))
 
-	On executors, MD3.IconFont.Load() does all of that automatically
+	On executors none of this is needed: CreateWindow loads the icons as a
+	sprite-sheet *image* instead (MD3.IconImages, see Icons.SetSheet), which
+	takes priority over any font. MD3.IconFont.Load() can still load the font
 	(Outlined by default; Filled / Round / Sharp also available). All four
 	styles share the codepoints below.
 
@@ -33,6 +35,8 @@
 	Icons.Glyph("settings")                -- just the character, if you want
 	                                        -- to lay it out yourself
 ]]
+local IconSheet = require(script.Parent.IconSheet)
+
 local Icons = {}
 
 -- Codepoints copied from Google's official Material Icons codepoint map
@@ -330,12 +334,15 @@ Icons.BuilderNames = BUILDER_NAMES
 Icons.BuilderFont = BUILDER_FONT
 
 local iconFont: Font? = nil
+local sheetImage: string? = nil -- content id of the loaded icon sprite sheet
 
 -- Every label Icons.Apply has drawn on, so switching the icon font (or
 -- style) at runtime redraws icons that already exist. Strong keys with a
 -- Destroying cleanup rather than weak keys: Roblox may recreate an
 -- Instance's Lua wrapper, which would silently drop weak entries.
 local applied = {} -- label -> icon name
+local managed = {} -- labels whose Visible follows whether the icon can be drawn
+local sprites = {} -- label -> ImageLabel showing the icon from the sprite sheet
 local labelFonts = {} -- label -> the label's own font, for plain fallbacks
 local cleanups = {}
 
@@ -356,6 +363,19 @@ function Icons.GetFont(): Font?
 	return iconFont
 end
 
+-- Sets the icon sprite sheet image (a content id, e.g. from getcustomasset;
+-- see Executor/IconImages.lua, which loads one per style) and redraws
+-- every icon on screen with it. The sheet takes priority over the font.
+-- nil removes it again.
+function Icons.SetSheet(image: string?)
+	sheetImage = if image ~= "" then image else nil
+	reapplyAll()
+end
+
+function Icons.GetSheet(): string?
+	return sheetImage
+end
+
 local builderEnabled = true
 
 -- BuilderIcons is on by default; turn it off to use only the Material font
@@ -366,7 +386,8 @@ function Icons.SetBuilderIconsEnabled(enabled: boolean)
 end
 
 -- Resolves `name` to the text to display and the font to display it in
--- (nil font = keep the label's own font). Priority: Material font ->
+-- (nil font = keep the label's own font) when it's drawn as text.
+-- Priority: sprite sheet image (handled by Apply) -> Material font ->
 -- BuilderIcons -> plain character.
 function Icons.Resolve(name: string): (string, Font?)
 	local builderName = name:match("^builder:(.+)$")
@@ -379,7 +400,11 @@ function Icons.Resolve(name: string): (string, Font?)
 	if builderEnabled and BUILDER_NAMES[name] then
 		return BUILDER_NAMES[name], BUILDER_FONT
 	end
-	return FALLBACK_GLYPHS[name] or (CODEPOINTS[name] and utf8.char(CODEPOINTS[name])) or "?", nil
+	-- Never emit a bare Material codepoint without the Material font: those
+	-- are Private Use Area characters, and system fallback fonts draw them
+	-- as something unrelated (e.g. Chinese user-defined characters on
+	-- Traditional Chinese Windows). Drawing nothing is better.
+	return FALLBACK_GLYPHS[name] or "", nil
 end
 
 -- The text Icons.Apply would put on a label for `name`.
@@ -394,6 +419,7 @@ function Icons.CanRender(name: string): boolean
 		return false
 	end
 	return name:match("^builder:.+") ~= nil
+		or (sheetImage ~= nil and IconSheet.Index[name] ~= nil)
 		or (iconFont ~= nil and CODEPOINTS[name] ~= nil)
 		or (builderEnabled and BUILDER_NAMES[name] ~= nil)
 		or FALLBACK_GLYPHS[name] ~= nil
@@ -405,20 +431,83 @@ function Icons.Register(name: string, codepoint: number)
 	CODEPOINTS[name] = codepoint
 end
 
+-- Keeps the sprite looking like the label's text would: same color,
+-- transparency, size and layer.
+local function syncSprite(textObject, sprite)
+	sprite.ImageColor3 = textObject.TextColor3
+	sprite.ImageTransparency = textObject.TextTransparency
+	sprite.Size = if textObject.TextScaled
+		then UDim2.fromScale(1, 1)
+		else UDim2.fromOffset(textObject.TextSize, textObject.TextSize)
+	sprite.ZIndex = textObject.ZIndex
+end
+
+local function spriteFor(textObject)
+	local sprite = sprites[textObject]
+	if sprite and sprite.Parent == textObject then
+		return sprite
+	end
+	sprite = Instance.new("ImageLabel")
+	sprite.Name = "MD3Icon"
+	sprite.BackgroundTransparency = 1
+	sprite.AnchorPoint = Vector2.new(0.5, 0.5)
+	sprite.Position = UDim2.fromScale(0.5, 0.5)
+	sprite.ScaleType = Enum.ScaleType.Fit
+	sprite.ImageRectSize = Vector2.new(IconSheet.Cell, IconSheet.Cell)
+	sprite.Parent = textObject
+	sprites[textObject] = sprite
+	for _, prop in { "TextColor3", "TextTransparency", "TextSize", "TextScaled", "ZIndex" } do
+		textObject:GetPropertyChangedSignal(prop):Connect(function()
+			if sprites[textObject] == sprite then
+				syncSprite(textObject, sprite)
+			end
+		end)
+	end
+	return sprite
+end
+
 local function draw(textObject, name: string)
+	local index = sheetImage and IconSheet.Index[name]
+	if index then
+		local sprite = spriteFor(textObject)
+		sprite.Image = sheetImage
+		sprite.ImageRectOffset = Vector2.new(
+			(index % IconSheet.Columns) * IconSheet.Pitch + IconSheet.Gutter,
+			math.floor(index / IconSheet.Columns) * IconSheet.Pitch + IconSheet.Gutter
+		)
+		sprite.Visible = true
+		syncSprite(textObject, sprite)
+		textObject.Text = ""
+		if managed[textObject] then
+			textObject.Visible = true
+		end
+		return
+	end
+
+	if sprites[textObject] then
+		sprites[textObject].Visible = false
+	end
 	local text, font = Icons.Resolve(name)
 	textObject.Text = text
 	textObject.FontFace = font or labelFonts[textObject] or textObject.FontFace
+	if managed[textObject] then
+		textObject.Visible = text ~= ""
+	end
 end
 
--- Applies the icon glyph + matching font onto a Text object in one call.
--- The label keeps following later SetFont / style changes.
-function Icons.Apply(textObject: TextLabel | TextButton, name: string)
+-- Applies the icon onto a Text object (TextLabel/TextButton) in one call:
+-- as a sprite-sheet image when one is loaded, otherwise as a glyph. The
+-- label keeps following later SetSheet / SetFont / style changes. With
+-- `manageVisibility`, the label is hidden while the icon can't be drawn
+-- and shown again once a source that has it arrives.
+function Icons.Apply(textObject: TextLabel | TextButton, name: string, manageVisibility: boolean?)
 	if applied[textObject] == nil then
 		labelFonts[textObject] = textObject.FontFace
 		local ok, connection = pcall(function()
 			return textObject.Destroying:Connect(function()
 				applied[textObject] = nil
+				managed[textObject] = nil
+				sprites[textObject] = nil
 				labelFonts[textObject] = nil
 				cleanups[textObject] = nil
 			end)
@@ -428,6 +517,9 @@ function Icons.Apply(textObject: TextLabel | TextButton, name: string)
 		end
 	end
 	applied[textObject] = name
+	if manageVisibility then
+		managed[textObject] = true
+	end
 	draw(textObject, name)
 end
 

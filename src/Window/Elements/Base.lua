@@ -133,7 +133,9 @@ function Base.Glyph(themer, name, size: number, role, parent: Instance?, tint: b
 		Visible = Icons.CanRender(name),
 		Parent = parent,
 	}
-	Icons.Apply(label, name)
+	-- Icons manages Visible: hidden while no source can draw the icon, shown
+	-- once the icon images (or a font) arrive.
+	Icons.Apply(label, name, true)
 	if role then
 		themer:Bind(label, { TextColor3 = role })
 	end
@@ -141,8 +143,10 @@ function Base.Glyph(themer, name, size: number, role, parent: Instance?, tint: b
 end
 Base.Icon = Base.Glyph
 
+-- True for images and for any icon that can be drawn now or once the icon
+-- images finish loading.
 function Base.CanShowIcon(icon): boolean
-	return Assets.IsImage(icon) or Icons.CanRender(icon)
+	return Assets.IsImage(icon) or Icons.CanRender(icon) or (type(icon) == "string" and Icons.Codepoints[icon] ~= nil)
 end
 
 -- Colors an icon made by Base.Glyph, whichever kind it is.

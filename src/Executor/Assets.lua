@@ -97,6 +97,11 @@ function Assets.FromUrl(url: string, fileName: string?): (string?, string?)
 	return asset
 end
 
+-- Drops a cached URL/file so the next request loads it again.
+function Assets.Forget(key: string)
+	cache[key] = nil
+end
+
 -- Returns a workspace file as a content id.
 function Assets.FromFile(path: string): string?
 	if cache[path] then

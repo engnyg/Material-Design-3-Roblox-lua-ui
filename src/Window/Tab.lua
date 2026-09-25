@@ -115,8 +115,11 @@ function Tab.new(window, props)
 	local icon = Base.Glyph(themer, props.Icon or "circle", 20, nil, button)
 	icon.AnchorPoint = Vector2.new(0, 0.5)
 	icon.Position = UDim2.new(0, 14, 0.5, 0)
-	local hasIcon = props.Icon ~= nil and icon.Visible
-	icon.Visible = hasIcon
+	-- Reserve room for the icon even if it's still waiting for the icon images.
+	local hasIcon = props.Icon ~= nil and Base.CanShowIcon(props.Icon)
+	if not hasIcon then
+		icon.Visible = false
+	end
 
 	local label = Create("TextLabel") {
 		Name = "Label",
