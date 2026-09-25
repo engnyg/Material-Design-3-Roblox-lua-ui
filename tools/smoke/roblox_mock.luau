@@ -174,10 +174,31 @@ function Vector2.new(x, y)
 	x, y = x or 0, y or 0
 	return setmetatable({ X = x, Y = y, Magnitude = math.sqrt(x * x + y * y) }, Vector2Meta)
 end
-Vector2Meta.__sub = function(a, b) return Vector2.new(a.X - b.X, a.Y - b.Y) end
-Vector2Meta.__add = function(a, b) return Vector2.new(a.X + b.X, a.Y + b.Y) end
+-- Like Roblox, Vector2 and Vector3 don't mix in arithmetic (InputObject.Position
+-- is a Vector3 while AbsolutePosition is a Vector2).
+local Vector3Meta = {}
+local function expect(meta, typeName, a, b)
+	for i, v in { a, b } do
+		if getmetatable(v) ~= meta then
+			local got = if getmetatable(v) == Vector3Meta then "Vector3" elseif getmetatable(v) == Vector2Meta then "Vector2" else type(v)
+			error(`invalid argument #{i} ({typeName} expected, got {got})`, 3)
+		end
+	end
+end
+Vector2Meta.__sub = function(a, b) expect(Vector2Meta, "Vector2", a, b) return Vector2.new(a.X - b.X, a.Y - b.Y) end
+Vector2Meta.__add = function(a, b) expect(Vector2Meta, "Vector2", a, b) return Vector2.new(a.X + b.X, a.Y + b.Y) end
 Vector2Meta.__div = function(a, b) return Vector2.new(a.X / b, a.Y / b) end
 Vector2Meta.__eq = function(a, b) return a.X == b.X and a.Y == b.Y end
+
+Vector3 = {}
+function Vector3.new(x, y, z)
+	x, y, z = x or 0, y or 0, z or 0
+	return setmetatable({ X = x, Y = y, Z = z, Magnitude = math.sqrt(x * x + y * y + z * z) }, Vector3Meta)
+end
+Vector3Meta.__sub = function(a, b) expect(Vector3Meta, "Vector3", a, b) return Vector3.new(a.X - b.X, a.Y - b.Y, a.Z - b.Z) end
+Vector3Meta.__add = function(a, b) expect(Vector3Meta, "Vector3", a, b) return Vector3.new(a.X + b.X, a.Y + b.Y, a.Z + b.Z) end
+Vector3Meta.__div = function(a, b) return Vector3.new(a.X / b, a.Y / b, a.Z / b) end
+Vector3Meta.__eq = function(a, b) return a.X == b.X and a.Y == b.Y and a.Z == b.Z end
 
 TweenInfo = { new = function(...) return { ... } end }
 

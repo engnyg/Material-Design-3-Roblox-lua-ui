@@ -75,6 +75,15 @@ function MD3.CreateWindow(selfOrProps, maybeProps)
 	return MD3.Window.new(props)
 end
 
+-- The open window with this Title (or Id), also from another script:
+--   local Window = MD3:GetWindow("My Hub")
+-- (windows are registered in getgenv(), which every script shares). nil if none.
+function MD3.GetWindow(selfOrKey, maybeKey)
+	local key = if selfOrKey == MD3 then maybeKey else selfOrKey
+	local windows = MD3.Env.Registry().Windows
+	return windows and windows[key] or nil
+end
+
 -- Shorthand for MD3.Theme.new(seed, mode)
 function MD3.new(seed: Color3?, mode: string?)
 	return MD3.Theme.new(seed, mode)

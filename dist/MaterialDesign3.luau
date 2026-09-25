@@ -4096,13 +4096,15 @@ local Create = require(script.Parent.Parent.Util.Create)
 
 local Ripple = {}
 
-function Ripple.Emit(parent: GuiObject, inputPosition: Vector2, color: Color3)
+-- `inputPosition` is usually InputObject.Position, which is a Vector3 in
+-- Roblox; only its X / Y matter (Vector3 - Vector2 would throw).
+function Ripple.Emit(parent: GuiObject, inputPosition: Vector2 | Vector3, color: Color3)
 	local absPos, absSize = parent.AbsolutePosition, parent.AbsoluteSize
 	if absSize.X <= 0 or absSize.Y <= 0 then
 		return
 	end
 
-	local localPos = inputPosition - absPos
+	local localPos = Vector2.new(inputPosition.X, inputPosition.Y) - absPos
 	-- Diameter big enough to cover the furthest corner from the tap point.
 	local maxDist = math.max(
 		(localPos - Vector2.new(0, 0)).Magnitude,
@@ -9084,6 +9086,7 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		Background = nil,                  -- background image (PNG / JPG) or WebM video: URL / rbxassetid / asset id
 		BackgroundKind = nil,              -- "Video" for a Roblox video asset id (a .webm is detected by itself)
 		BackgroundTransparency = 0.4,      -- how much of the window color shows through the image
+		BackgroundBlur = 0,                -- blur a background image, 0-24 px
 		Silent = false,                    -- true: no loading screen, start hidden, no automatic notifications
 		KeybindNotify = true,              -- toast when a keybind (AddKeybind) is used; not for the UI toggle key
 	})
@@ -9102,6 +9105,7 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 	-- or { Title, Subtitle, Icon, Duration } customizes it.
 	if not Window.IsLoaded then Window.Loaded:Wait() end -- if you need the window on screen first
 ]]
+local ContentProvider = game:GetService("ContentProvider")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -9160,6 +9164,24 @@ end
 
 local function sanitize(name: string): string
 	return (tostring(name):gsub("[^%w%-_ ]", ""))
+end
+
+-- Where the copies of a blurred background image go: the image itself, then
+-- two rings of 6 (half and full radius, the outer ring turned 30 degrees).
+-- Averaging the copies gives a soft blur; Roblox has no blur for UI.
+local MAX_BACKGROUND_BLUR = 24
+local function blurOffsets(radius: number): { Vector2 }
+	local offsets = { Vector2.new(0, 0) }
+	if radius <= 0 then
+		return offsets
+	end
+	for ring, distance in { radius * 0.5, radius } do
+		for i = 0, 5 do
+			local angle = (i / 6 + (ring - 1) / 12) * math.pi * 2
+			table.insert(offsets, Vector2.new(math.cos(angle) * distance, math.sin(angle) * distance))
+		end
+	end
+	return offsets
 end
 
 -- True for a .webm URL / file, which SetBackground plays as a video.
@@ -9293,16 +9315,28 @@ function Window.new(props)
 	-- Custom background (SetBackground): an image, or a looping muted WebM
 	-- video, behind everything in the window and rounded like it. Its
 	-- transparency lets the window color through.
-	local background = Create("ImageLabel") {
+	-- The image lives in a CanvasGroup: it clips the blur copies to the
+	-- window's rounded shape and fades them together (GroupTransparency).
+	local backgroundGroup = Create("CanvasGroup") {
 		Name = "Background",
 		BackgroundTransparency = 1,
 		Size = UDim2.fromScale(1, 1),
-		ScaleType = Enum.ScaleType.Crop,
 		ZIndex = 0,
 		Visible = false,
 		Parent = main,
 	}
-	Shape.Corner(Shape.Large, background)
+	Shape.Corner(Shape.Large, backgroundGroup)
+	local background = Create("ImageLabel") {
+		Name = "Image",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 1,
+		Visible = false,
+		Parent = backgroundGroup,
+	}
 	local video = Create("VideoFrame") {
 		Name = "BackgroundVideo",
 		BackgroundTransparency = 1,
@@ -9333,13 +9367,19 @@ function Window.new(props)
 		video.Playing = main.Visible and video.Visible
 	end))
 	self._background = background
+	self._backgroundGroup = backgroundGroup
+	self._backgroundLayers = { background } -- [1] is the image itself, then blur copies
+	self._backgroundBlur = 0
 	self._backgroundVideo = video
 	self._backgroundVeil = veil
 	self._backgroundSource = nil
 	self._backgroundKind = nil
 	self._backgroundTransparency = math.clamp(props.BackgroundTransparency or 0.4, 0, 1)
-	background.ImageTransparency = self._backgroundTransparency
+	backgroundGroup.GroupTransparency = self._backgroundTransparency
 	veil.BackgroundTransparency = 1 - self._backgroundTransparency
+	if props.BackgroundBlur then
+		self:SetBackgroundBlur(props.BackgroundBlur)
+	end
 
 	-- The shadow is a sibling of `main`, outside its UIScale, so it gets its
 	-- own UIScale kept in sync (otherwise it stays full size on phones).
@@ -10040,6 +10080,7 @@ function Window:SetBackground(source: string?, transparency: number?, kind: stri
 		self._backgroundSource, self._backgroundKind = nil, nil
 		image.Image = ""
 		image.Visible = false
+		self._backgroundGroup.Visible = false
 		video.Playing = false
 		video.Video = ""
 		video.Visible = false
@@ -10053,19 +10094,99 @@ function Window:SetBackground(source: string?, transparency: number?, kind: stri
 		self._backgroundKind = if isVideo then "Video" else "Image"
 		image.Image = if isVideo then "" else content
 		image.Visible = not isVideo
+		self._backgroundGroup.Visible = not isVideo
 		video.Video = if isVideo then content else ""
 		video.Visible = isVideo
 		video.Playing = isVideo and self.Instance.Visible
+		if isVideo then
+			self:_checkBackgroundVideo(source)
+		end
 	end
+	self:_layoutBackgroundBlur()
 	self:_syncBackgroundControls()
 	return true
 end
 
+-- A video can download fine and still be refused by Roblox (some executors'
+-- getcustomasset can't serve local videos, e.g. on mobile). Ask
+-- ContentProvider in the background; if it fails, drop the video and say why.
+function Window:_checkBackgroundVideo(source: string)
+	local video = self._backgroundVideo
+	task.spawn(function()
+		local failed = false
+		pcall(function()
+			ContentProvider:PreloadAsync({ video }, function(_, status)
+				if status == Enum.AssetFetchStatus.Failure then
+					failed = true
+				end
+			end)
+		end)
+		if not failed or self._destroyed or self._backgroundSource ~= source then
+			return
+		end
+		self:SetBackground(nil)
+		local reason = "Roblox couldn't play this WebM video here (this executor may not support local videos). Use a PNG / JPG image background instead."
+		warn(`[MD3] background: {reason}`)
+		if not self.Silent then
+			self:Notify({ Title = "Background unavailable", Content = reason, Icon = "error" })
+		end
+	end)
+end
+
 function Window:SetBackgroundTransparency(transparency: number)
 	self._backgroundTransparency = math.clamp(transparency, 0, 1)
-	self._background.ImageTransparency = self._backgroundTransparency
+	self._backgroundGroup.GroupTransparency = self._backgroundTransparency
 	self._backgroundVeil.BackgroundTransparency = 1 - self._backgroundTransparency
 	self:_syncBackgroundControls()
+end
+
+-- Blurs a background image by `pixels` (0 = sharp, up to 24). Roblox has no
+-- blur for UI, so this draws 13 offset copies of the image and averages
+-- them; 0 keeps a single image. Video backgrounds aren't blurred (each copy
+-- would decode the video again).
+function Window:SetBackgroundBlur(pixels: number)
+	self._backgroundBlur = math.clamp(pixels, 0, MAX_BACKGROUND_BLUR)
+	self:_layoutBackgroundBlur()
+	self:_syncBackgroundControls()
+end
+
+function Window:GetBackgroundBlur(): number
+	return self._backgroundBlur
+end
+
+-- Makes the image copies match the blur amount and the current image.
+function Window:_layoutBackgroundBlur()
+	local layers = self._backgroundLayers
+	local image = self._background
+	local offsets = blurOffsets(if image.Image ~= "" then self._backgroundBlur else 0)
+	for i = #layers, #offsets + 1, -1 do
+		layers[i]:Destroy()
+		layers[i] = nil
+	end
+	for i = #layers + 1, #offsets do
+		layers[i] = Create("ImageLabel") {
+			Name = `Blur{i}`,
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ScaleType = Enum.ScaleType.Crop,
+			Parent = self._backgroundGroup,
+		}
+	end
+	-- Copies are drawn a little bigger than the window so offsetting them
+	-- never uncovers its edges; the group clips them to the window shape.
+	local pad = math.ceil(if #offsets > 1 then self._backgroundBlur else 0)
+	for i, layer in layers do
+		local offset = offsets[i]
+		layer.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y)
+		layer.Size = UDim2.new(1, pad * 2, 1, pad * 2)
+		layer.ZIndex = i
+		-- Layer i drawn over the ones below it at opacity 1/i gives every
+		-- copy the same weight: an even average.
+		layer.ImageTransparency = 1 - 1 / i
+		if i > 1 then
+			layer.Image = image.Image
+		end
+	end
 end
 
 -- The current background (as given to SetBackground, nil when none), its
@@ -10087,6 +10208,9 @@ function Window:_syncBackgroundControls()
 	local percent = math.round(self._backgroundTransparency * 100)
 	if controls.Slider.Value ~= percent then
 		controls.Slider:Set(percent, true)
+	end
+	if controls.Blur.Value ~= self._backgroundBlur then
+		controls.Blur:Set(self._backgroundBlur, true)
 	end
 end
 
@@ -10317,6 +10441,19 @@ function Window:AddSettingsTab(props)
 			self:SetBackgroundTransparency(percent / 100)
 		end,
 	})
+	local backgroundBlur = backgroundSection:AddSlider({
+		Title = "Image blur",
+		Description = "Softens a background image (not videos)",
+		Min = 0,
+		Max = MAX_BACKGROUND_BLUR,
+		Step = 1,
+		Suffix = " px",
+		Default = self._backgroundBlur,
+		Flag = "MD3_BackgroundBlur",
+		Callback = function(pixels)
+			self:SetBackgroundBlur(pixels)
+		end,
+	})
 	backgroundSection:AddButton({
 		Title = "Remove background",
 		Icon = "delete",
@@ -10324,7 +10461,7 @@ function Window:AddSettingsTab(props)
 			self:SetBackground(nil)
 		end,
 	})
-	self._backgroundControls = { Input = backgroundInput, Slider = backgroundSlider }
+	self._backgroundControls = { Input = backgroundInput, Slider = backgroundSlider, Blur = backgroundBlur }
 
 	self:AddThemeEditor(tab)
 
@@ -10716,6 +10853,15 @@ MD3.Window = require(script.Window.Window)
 function MD3.CreateWindow(selfOrProps, maybeProps)
 	local props = if selfOrProps == MD3 then maybeProps else selfOrProps
 	return MD3.Window.new(props)
+end
+
+-- The open window with this Title (or Id), also from another script:
+--   local Window = MD3:GetWindow("My Hub")
+-- (windows are registered in getgenv(), which every script shares). nil if none.
+function MD3.GetWindow(selfOrKey, maybeKey)
+	local key = if selfOrKey == MD3 then maybeKey else selfOrKey
+	local windows = MD3.Env.Registry().Windows
+	return windows and windows[key] or nil
 end
 
 -- Shorthand for MD3.Theme.new(seed, mode)
