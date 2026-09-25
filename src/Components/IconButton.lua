@@ -16,6 +16,7 @@ local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
+local Assets = require(Root.Executor.Assets)
 
 local IconButton = {}
 IconButton.__index = IconButton
@@ -78,7 +79,7 @@ function IconButton.new(props)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(24, 24),
-		Image = props.Icon or "",
+		Image = Assets.Resolve(props.Icon),
 		Parent = button,
 	}
 	self._icon = icon
@@ -172,7 +173,7 @@ function IconButton:SetDisabled(disabled: boolean)
 end
 
 function IconButton:SetIcon(image: string)
-	self._icon.Image = image
+	self._icon.Image = Assets.Resolve(image)
 end
 
 function IconButton:SetTheme(theme)

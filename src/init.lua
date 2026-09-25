@@ -63,6 +63,7 @@ MD3.Divider = require(script.Components.Divider)
 -- Executor layer
 MD3.Env = require(script.Executor.Env)
 MD3.IconFont = require(script.Executor.IconFont)
+MD3.Assets = require(script.Executor.Assets)
 MD3.Window = require(script.Window.Window)
 
 -- Creates an executor-style window. Works as MD3:CreateWindow{...} or

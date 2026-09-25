@@ -20,6 +20,7 @@ local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Icons = require(Root.Core.Icons)
+local Assets = require(Root.Executor.Assets)
 
 local Chip = {}
 Chip.__index = Chip
@@ -85,7 +86,7 @@ function Chip.new(props)
 			Name = "LeadingIcon",
 			BackgroundTransparency = 1,
 			Size = UDim2.fromOffset(18, 18),
-			Image = props.Icon,
+			Image = Assets.Resolve(props.Icon),
 			LayoutOrder = 1,
 			Parent = content,
 		}

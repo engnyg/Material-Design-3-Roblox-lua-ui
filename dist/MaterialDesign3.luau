@@ -73,6 +73,7 @@ local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Elevation = require(Root.Core.Elevation)
+local Assets = require(Root.Executor.Assets)
 
 local Button = {}
 Button.__index = Button
@@ -147,7 +148,7 @@ function Button.new(props)
 		icon = Create("ImageLabel") {
 			Name = "Icon",
 			BackgroundTransparency = 1,
-			Image = props.Icon,
+			Image = Assets.Resolve(props.Icon),
 			Size = UDim2.fromOffset(18, 18),
 			LayoutOrder = 1,
 			Parent = content,
@@ -656,6 +657,7 @@ local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Icons = require(Root.Core.Icons)
+local Assets = require(Root.Executor.Assets)
 
 local Chip = {}
 Chip.__index = Chip
@@ -721,7 +723,7 @@ function Chip.new(props)
 			Name = "LeadingIcon",
 			BackgroundTransparency = 1,
 			Size = UDim2.fromOffset(18, 18),
-			Image = props.Icon,
+			Image = Assets.Resolve(props.Icon),
 			LayoutOrder = 1,
 			Parent = content,
 		}
@@ -1179,6 +1181,7 @@ local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Elevation = require(Root.Core.Elevation)
+local Assets = require(Root.Executor.Assets)
 
 local FAB = {}
 FAB.__index = FAB
@@ -1242,7 +1245,7 @@ function FAB.new(props)
 		Name = "Icon",
 		BackgroundTransparency = 1,
 		Size = UDim2.fromOffset(ICON_SIZES[self._size], ICON_SIZES[self._size]),
-		Image = props.Icon or "",
+		Image = Assets.Resolve(props.Icon),
 		LayoutOrder = 1,
 		Parent = content,
 	}
@@ -1361,6 +1364,7 @@ local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
+local Assets = require(Root.Executor.Assets)
 
 local IconButton = {}
 IconButton.__index = IconButton
@@ -1423,7 +1427,7 @@ function IconButton.new(props)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(24, 24),
-		Image = props.Icon or "",
+		Image = Assets.Resolve(props.Icon),
 		Parent = button,
 	}
 	self._icon = icon
@@ -1517,7 +1521,7 @@ function IconButton:SetDisabled(disabled: boolean)
 end
 
 function IconButton:SetIcon(image: string)
-	self._icon.Image = image
+	self._icon.Image = Assets.Resolve(image)
 end
 
 function IconButton:SetTheme(theme)
@@ -1563,6 +1567,7 @@ local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
+local Assets = require(Root.Executor.Assets)
 
 local NavigationBar = {}
 NavigationBar.__index = NavigationBar
@@ -1635,7 +1640,7 @@ function NavigationBar.new(props)
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
 			Size = UDim2.fromOffset(24, 24),
-			Image = dest.Icon or "",
+			Image = Assets.Resolve(dest.Icon),
 			Parent = indicator,
 		}
 
@@ -2644,6 +2649,7 @@ local Signal = require(Root.Util.Signal)
 local Theme = require(Root.Core.Theme)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
+local Assets = require(Root.Executor.Assets)
 
 local Switch = {}
 Switch.__index = Switch
@@ -2700,7 +2706,7 @@ function Switch.new(props)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(0.7, 0.7),
-		Image = props.CheckedIcon or "",
+		Image = Assets.Resolve(props.CheckedIcon),
 		ImageTransparency = 1,
 		Parent = thumb,
 	}
@@ -3358,9 +3364,16 @@ loaders[newNode("Icons", N_Core)] = function(script, require)
 		   or Asset Manager) and copy its rbxassetid.
 		3. MD3.Icons.SetFont(Font.new("rbxassetid://<your id>"))
 
-	Until SetFont is called, Icons.Apply() falls back to a small set of plain
-	glyph characters (still no font asset needed) so components render a
-	reasonable shape instead of a blank/tofu box.
+	On executors, MD3.IconFont.Load() does all of that automatically.
+
+	Until SetFont is called, Icons.Apply() falls back to Roblox's own
+	BuilderIcons font, which ships inside every Roblox client (no download,
+	no asset upload; icons are ligatures, i.e. the text "gear" renders as a
+	gear). Material names are mapped onto the closest BuilderIcons glyph.
+	Names with no BuilderIcons match fall back to a small set of plain glyph
+	characters, so components never show a blank/tofu box.
+
+	Any BuilderIcons glyph can also be used directly: Icons.Apply(label, "builder:sword").
 
 	local Icons = MD3.Icons
 	Icons.Apply(myTextLabel, "settings")   -- sets FontFace + Text
@@ -3536,7 +3549,132 @@ local FALLBACK_GLYPHS = {
 	done = "\u{2713}",
 }
 
+-- Roblox's built-in ligature icon font (the same one the Roblox app UI
+-- uses). Font.new doesn't throw for a missing file, so this is safe to
+-- create even if Roblox moves it; SetBuilderIconsEnabled(false) opts out.
+local BUILDER_FONT = Font.new(
+	"rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json",
+	Enum.FontWeight.Regular,
+	Enum.FontStyle.Normal
+)
+
+-- Material icon name -> closest BuilderIcons ligature.
+local BUILDER_NAMES = {
+	add = "plus-large",
+	alarm = "bell-clock",
+	arrow_back = "arrow-large-left",
+	arrow_drop_down = "caret-small-down",
+	arrow_drop_up = "caret-small-up",
+	arrow_forward = "arrow-large-right",
+	attach_file = "chain-link",
+	autorenew = "arrow-rotate-right",
+	backpack = "backpack",
+	bar_chart = "chart-three-vertical-bars",
+	block = "circle-slash",
+	bolt = "lightning-bolt",
+	bookmark = "bookmark",
+	build = "hammer-code",
+	calendar_today = "calendar",
+	camera_alt = "photo-camera",
+	cancel = "circle-x",
+	chat = "speech-bubble-round",
+	check = "check",
+	check_box = "square-check",
+	check_circle = "circle-check",
+	chevron_left = "chevron-large-left",
+	chevron_right = "chevron-large-right",
+	close = "x",
+	cloud = "cloud",
+	code = "code",
+	comment = "speech-bubble-round",
+	content_copy = "two-stacked-squares",
+	credit_card = "wallet",
+	dark_mode = "moon",
+	dashboard = "squares-grid-plus",
+	delete = "trash-can",
+	done = "check",
+	download = "arrow-down-to-line",
+	drag_handle = "three-bars-horizontal",
+	drag_indicator = "six-dots-two-column-grid",
+	edit = "pencil",
+	error = "triangle-exclamation",
+	event = "calendar",
+	expand_less = "chevron-small-up",
+	expand_more = "chevron-small-down",
+	explore = "compass",
+	favorite = "heart",
+	flag = "flag",
+	folder = "folder",
+	fullscreen = "dual-arrows-to-corners",
+	grid_view = "grid",
+	group = "two-people",
+	groups = "three-people",
+	help_outline = "circle-question",
+	history = "clock",
+	home = "house",
+	image = "image",
+	info = "circle-i",
+	keyboard_arrow_down = "chevron-small-down",
+	keyboard_arrow_left = "chevron-small-left",
+	keyboard_arrow_right = "chevron-small-right",
+	keyboard_arrow_up = "chevron-small-up",
+	language = "globe-simplified",
+	light_mode = "sun",
+	link = "chain-link",
+	list = "list-bulleted",
+	location_on = "location-pin",
+	lock = "lock-closed",
+	login = "door-open-arrow-to-bottom-right",
+	mail = "envelope",
+	menu = "three-bars-horizontal",
+	mic = "microphone",
+	mic_off = "microphone-slash",
+	minimize = "minus",
+	more_horiz = "three-dots-horizontal",
+	more_vert = "three-dots-vertical",
+	notifications = "bell",
+	open_in_new = "arrow-up-right-from-square",
+	palette = "paint-brush",
+	pause = "pause-large",
+	person = "person",
+	play_arrow = "play-large",
+	public = "globe-simplified",
+	refresh = "arrow-rotate-right",
+	remove = "minus",
+	reorder = "four-bars-horizontal-justified-aligned",
+	search = "magnifying-glass",
+	send = "paper-airplane",
+	settings = "gear",
+	shield = "shield-check",
+	shopping_cart = "shopping-cart",
+	skip_next = "skip-next-large",
+	skip_previous = "skip-previous-large",
+	sports_esports = "controller-with-cog",
+	star = "star",
+	stop = "stop-large",
+	swap_horiz = "two-arrows-left-right",
+	swap_vert = "two-arrows-down-and-up",
+	sync = "arrow-rotate-right",
+	tag = "hashtag",
+	thumb_down = "thumb-down",
+	thumb_up = "thumb-up",
+	timer = "clock",
+	schedule = "clock",
+	tune = "three-sliders-horizontal",
+	verified = "verified-check",
+	visibility = "eye",
+	visibility_off = "eye-slash",
+	volume_off = "speaker-slash",
+	volume_up = "speaker",
+	warning = "triangle-exclamation",
+	widgets = "nine-dots-grid",
+	zoom_in = "magnifying-glass-plus",
+	zoom_out = "magnifying-glass-minus",
+}
+
 Icons.Codepoints = CODEPOINTS
+Icons.BuilderNames = BUILDER_NAMES
+Icons.BuilderFont = BUILDER_FONT
 
 local iconFont: Font? = nil
 
@@ -3553,19 +3691,46 @@ function Icons.GetFont(): Font?
 	return iconFont
 end
 
--- Returns the actual glyph character for `name`, using the real Material
--- codepoint when a font has been configured, otherwise a plain fallback.
-function Icons.Glyph(name: string): string
-	if iconFont and CODEPOINTS[name] then
-		return utf8.char(CODEPOINTS[name])
-	end
-	return FALLBACK_GLYPHS[name] or (CODEPOINTS[name] and utf8.char(CODEPOINTS[name])) or "?"
+local builderEnabled = true
+
+-- BuilderIcons is on by default; turn it off to use only the Material font
+-- and the plain-character fallbacks.
+function Icons.SetBuilderIconsEnabled(enabled: boolean)
+	builderEnabled = enabled
 end
 
--- True when `name` renders as something meaningful right now (a real
--- Material glyph with the font set, or a plain fallback character).
+-- Resolves `name` to the text to display and the font to display it in
+-- (nil font = keep the label's own font). Priority: Material font ->
+-- BuilderIcons -> plain character.
+function Icons.Resolve(name: string): (string, Font?)
+	local builderName = name:match("^builder:(.+)$")
+	if builderName then
+		return builderName, BUILDER_FONT
+	end
+	if iconFont and CODEPOINTS[name] then
+		return utf8.char(CODEPOINTS[name]), iconFont
+	end
+	if builderEnabled and BUILDER_NAMES[name] then
+		return BUILDER_NAMES[name], BUILDER_FONT
+	end
+	return FALLBACK_GLYPHS[name] or (CODEPOINTS[name] and utf8.char(CODEPOINTS[name])) or "?", nil
+end
+
+-- The text Icons.Apply would put on a label for `name`.
+function Icons.Glyph(name: string): string
+	return (Icons.Resolve(name))
+end
+
+-- True when `name` renders as something meaningful right now (a Material
+-- glyph with the font set, a BuilderIcons glyph, or a plain fallback).
 function Icons.CanRender(name: string): boolean
-	return (iconFont ~= nil and CODEPOINTS[name] ~= nil) or FALLBACK_GLYPHS[name] ~= nil
+	if type(name) ~= "string" then
+		return false
+	end
+	return name:match("^builder:.+") ~= nil
+		or (iconFont ~= nil and CODEPOINTS[name] ~= nil)
+		or (builderEnabled and BUILDER_NAMES[name] ~= nil)
+		or FALLBACK_GLYPHS[name] ~= nil
 end
 
 -- Adds (or overrides) a glyph by codepoint, e.g. one from the official
@@ -3576,9 +3741,10 @@ end
 
 -- Applies the icon glyph + matching font onto a Text object in one call.
 function Icons.Apply(textObject: TextLabel | TextButton, name: string)
-	textObject.Text = Icons.Glyph(name)
-	if iconFont then
-		textObject.FontFace = iconFont
+	local text, font = Icons.Resolve(name)
+	textObject.Text = text
+	if font then
+		textObject.FontFace = font
 	end
 end
 
@@ -3995,6 +4161,162 @@ function Typography.Apply(textObject: TextLabel | TextButton | TextBox, role: st
 end
 
 return Typography
+end
+
+-- Executor/Assets.lua
+loaders[newNode("Assets", N_Executor)] = function(script, require)
+--[[
+	Loads images from outside Roblox (a web URL or a file in the executor
+	workspace) so they can be used anywhere an Image is expected, without
+	uploading them as Roblox assets first.
+
+	How: HttpGet the file once, writefile it into MD3/assets/, then turn it
+	into a content id with getcustomasset (cached on disk and in memory).
+
+	local image = MD3.Assets.Resolve("https://example.com/logo.png")
+	imageLabel.Image = image
+
+	Every Icon / Logo prop in MD3 goes through Assets.Resolve, so these all
+	work the same:
+		Icon = "https://raw.githubusercontent.com/me/repo/main/icon.png"
+		Icon = "rbxassetid://1234567"   or   Icon = 1234567
+		Icon = "MyHub/icon.png"         -- a file already in the workspace
+	Without executor file functions, web URLs resolve to "" (no image) and
+	rbxassetid ids pass through unchanged.
+]]
+local Root = script.Parent.Parent
+local Env = require(Root.Executor.Env)
+
+local Assets = {}
+
+Assets.Folder = "MD3/assets"
+
+local cache: { [string]: string } = {}
+
+-- Short stable hash so different URLs with the same file name don't clash.
+local function hash(text: string): string
+	local h = 5381
+	for i = 1, #text do
+		h = (h * 33 + string.byte(text, i)) % 4294967296
+	end
+	return string.format("%08x", h)
+end
+
+local function fileNameFor(url: string): string
+	local path = url:gsub("[?#].*$", "")
+	local name = path:match("([^/]+)$") or "image"
+	name = name:gsub("[^%w%-_%.]", "_")
+	if not name:find("%.%w+$") then
+		name ..= ".png"
+	end
+	return `{hash(url)}_{name}`
+end
+
+local function looksLikeHtml(data: string): boolean
+	local head = data:sub(1, 256):lower()
+	return head:find("<!doctype", 1, true) ~= nil or head:find("<html", 1, true) ~= nil
+end
+
+-- True for values that should be shown as an image rather than treated as
+-- a Material icon name.
+function Assets.IsImage(value): boolean
+	if type(value) == "number" then
+		return true
+	end
+	if type(value) ~= "string" or value == "" then
+		return false
+	end
+	return value:match("^rbxasset") ~= nil
+		or value:match("^rbxthumb") ~= nil
+		or value:match("^rbxhttp") ~= nil
+		or value:match("^https?://") ~= nil
+		or value:match("%.png$") ~= nil
+		or value:match("%.jpe?g$") ~= nil
+		or value:match("^%d+$") ~= nil
+end
+
+-- Downloads `url` (once) into the workspace and returns a content id for it.
+function Assets.FromUrl(url: string, fileName: string?): (string?, string?)
+	if cache[url] then
+		return cache[url]
+	end
+	if not Env.CanUseCustomAssets then
+		return nil, "executor has no writefile/getcustomasset"
+	end
+
+	Env.MakeFolder(Assets.Folder)
+	local path = `{Assets.Folder}/{fileName or fileNameFor(url)}`
+	if not Env.IsFile(path) then
+		local data = Env.HttpGet(url)
+		if not data or #data == 0 or looksLikeHtml(data) then
+			return nil, `could not download {url}`
+		end
+		if not Env.WriteFile(path, data) then
+			return nil, `could not write {path}`
+		end
+	end
+
+	local asset = Env.GetCustomAsset(path)
+	if not asset then
+		return nil, `getcustomasset failed for {path}`
+	end
+	cache[url] = asset
+	return asset
+end
+
+-- Returns a workspace file as a content id.
+function Assets.FromFile(path: string): string?
+	if cache[path] then
+		return cache[path]
+	end
+	if not Env.IsFile(path) then
+		return nil
+	end
+	local asset = Env.GetCustomAsset(path)
+	if asset then
+		cache[path] = asset
+	end
+	return asset
+end
+
+-- Turns any supported image reference into something ImageLabel.Image
+-- accepts. Never throws; returns "" when the image can't be loaded.
+function Assets.Resolve(image): string
+	if image == nil or image == "" then
+		return ""
+	end
+	if type(image) == "number" or (type(image) == "string" and image:match("^%d+$")) then
+		return `rbxassetid://{image}`
+	end
+	if type(image) ~= "string" then
+		return ""
+	end
+	if image:match("^rbx") or image:match("^http://www%.roblox%.com/asset") then
+		return image
+	end
+	if image:match("^https?://") then
+		local ok, asset = pcall(Assets.FromUrl, image)
+		if ok and asset then
+			return asset
+		end
+		warn(`[MD3] could not load image {image}`)
+		return ""
+	end
+	local ok, asset = pcall(Assets.FromFile, image)
+	return ok and asset or image
+end
+
+-- Downloads several images up front (e.g. at script start) so later
+-- Resolve calls don't wait on the network.
+function Assets.Preload(urls: { string })
+	for _, url in urls do
+		task.spawn(function()
+			pcall(Assets.FromUrl, url)
+		end)
+	end
+end
+
+return Assets
 end
 
 -- Executor/Env.lua
@@ -4609,6 +4931,7 @@ local Shape = require(Root.Core.Shape)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Icons = require(Root.Core.Icons)
+local Assets = require(Root.Executor.Assets)
 
 local Base = {}
 
@@ -4701,9 +5024,27 @@ function Base.Finish(element)
 	return element
 end
 
--- A Material icon glyph as a TextLabel; hidden when neither the icon font
--- nor a fallback character can draw it.
-function Base.Glyph(themer, name: string, size: number, role, parent: Instance?)
+-- An icon: either an image (URL / rbxassetid / workspace file, loaded via
+-- Assets) as an ImageLabel, or a Material icon name as a glyph TextLabel.
+-- Hidden when it can't be drawn. `role` tints it with a theme color; pass
+-- tint = false to keep a colored image (e.g. a logo) as-is.
+function Base.Glyph(themer, name, size: number, role, parent: Instance?, tint: boolean?)
+	if Assets.IsImage(name) then
+		local image = Create("ImageLabel") {
+			Name = "Icon",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(size, size),
+			Image = Assets.Resolve(name),
+			ScaleType = Enum.ScaleType.Fit,
+			Parent = parent,
+		}
+		image.Visible = image.Image ~= ""
+		if role and tint ~= false then
+			themer:Bind(image, { ImageColor3 = role })
+		end
+		return image
+	end
+
 	local label = Create("TextLabel") {
 		Name = "Icon",
 		BackgroundTransparency = 1,
@@ -4718,6 +5059,20 @@ function Base.Glyph(themer, name: string, size: number, role, parent: Instance?)
 		themer:Bind(label, { TextColor3 = role })
 	end
 	return label
+end
+Base.Icon = Base.Glyph
+
+function Base.CanShowIcon(icon): boolean
+	return Assets.IsImage(icon) or Icons.CanRender(icon)
+end
+
+-- Colors an icon made by Base.Glyph, whichever kind it is.
+function Base.SetIconColor(icon: GuiObject, color: Color3)
+	if icon:IsA("ImageLabel") then
+		icon.ImageColor3 = color
+	else
+		icon.TextColor3 = color
+	end
 end
 
 --[[
@@ -5971,7 +6326,7 @@ local Create = require(Root.Util.Create)
 local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
-local Icons = require(Root.Core.Icons)
+local Base = require(script.Parent.Elements.Base)
 
 local Notifier = {}
 Notifier.__index = Notifier
@@ -6048,20 +6403,14 @@ function Notifier:Notify(props)
 		Parent = card,
 	}
 
-	local iconName = props.Icon or "notifications"
-	local hasIcon = props.Icon ~= false and Icons.CanRender(iconName)
+	-- Icon: Material icon name or image (URL / rbxassetid); Image: a colored
+	-- image that isn't tinted.
+	local iconName = props.Image or props.Icon or "notifications"
+	local hasIcon = props.Icon ~= false and Base.CanShowIcon(iconName)
 	if hasIcon then
-		local icon = Create("TextLabel") {
-			Name = "Icon",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromOffset(20, 20),
-			TextSize = 20,
-			Font = Enum.Font.GothamMedium,
-			ZIndex = 51,
-			Parent = card,
-		}
-		Icons.Apply(icon, iconName)
-		themer:Bind(icon, { TextColor3 = "Primary" })
+		local icon = Base.Glyph(themer, iconName, 20, "Primary", card, props.Image == nil)
+		icon.ZIndex = 51
+		hasIcon = icon.Visible
 	end
 
 	local textColumn = Create("Frame") {
@@ -6355,7 +6704,7 @@ function Tab:_paint()
 	}):Play()
 	local content = active and c.OnSecondaryContainer or c.OnSurfaceVariant
 	self._label.TextColor3 = content
-	self._icon.TextColor3 = content
+	Base.SetIconColor(self._icon, content)
 	self._stateLayer:SetColor(c.OnSurface)
 end
 
@@ -6483,7 +6832,8 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 	local Window = MD3:CreateWindow({
 		Title = "My Hub",
 		Subtitle = "v1.0",
-		Icon = "widgets",                  -- Material icon name (optional)
+		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
+		Logo = "https://.../logo.png",     -- colored image shown instead of Icon (not tinted)
 		Size = UDim2.fromOffset(600, 420),
 		Mode = "Dark",                     -- "Light" | "Dark"
 		Seed = Color3.fromHex("#6750A4"),  -- accent / seed color
@@ -6686,11 +7036,17 @@ function Window.new(props)
 		Parent = main,
 	}
 
-	local hasAppIcon = props.Icon ~= nil and Icons.CanRender(props.Icon)
+	-- Logo = a colored image kept as-is; Icon = a tinted Material icon or image.
+	local appIconSource = props.Logo or props.Icon
+	local hasAppIcon = appIconSource ~= nil and Base.CanShowIcon(appIconSource)
 	if hasAppIcon then
-		local appIcon = Base.Glyph(themer, props.Icon, 24, "Primary", topBar)
+		local appIcon = Base.Glyph(themer, appIconSource, 24, "Primary", topBar, props.Logo == nil)
 		appIcon.AnchorPoint = Vector2.new(0, 0.5)
 		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
+		hasAppIcon = appIcon.Visible
+		if not hasAppIcon then
+			appIcon:Destroy()
+		end
 	end
 
 	local titleColumn = Create("Frame") {
@@ -6851,7 +7207,8 @@ function Window.new(props)
 		}
 		Shape.Corner(Shape.Large, mobileButton)
 		themer:Bind(mobileButton, { BackgroundColor3 = "PrimaryContainer" })
-		local glyph = Base.Glyph(themer, props.Icon and Icons.CanRender(props.Icon) and props.Icon or "menu", 24, "OnPrimaryContainer", mobileButton)
+		local source = props.Logo or (props.Icon and Base.CanShowIcon(props.Icon) and props.Icon) or "menu"
+		local glyph = Base.Glyph(themer, source, props.Logo and 32 or 24, "OnPrimaryContainer", mobileButton, props.Logo == nil)
 		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
 		glyph.Position = UDim2.fromScale(0.5, 0.5)
 		glyph.ZIndex = 61
@@ -7365,6 +7722,7 @@ MD3.Divider = require(script.Components.Divider)
 -- Executor layer
 MD3.Env = require(script.Executor.Env)
 MD3.IconFont = require(script.Executor.IconFont)
+MD3.Assets = require(script.Executor.Assets)
 MD3.Window = require(script.Window.Window)
 
 -- Creates an executor-style window. Works as MD3:CreateWindow{...} or

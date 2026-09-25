@@ -8,7 +8,7 @@ local Create = require(Root.Util.Create)
 local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
-local Icons = require(Root.Core.Icons)
+local Base = require(script.Parent.Elements.Base)
 
 local Notifier = {}
 Notifier.__index = Notifier
@@ -85,20 +85,14 @@ function Notifier:Notify(props)
 		Parent = card,
 	}
 
-	local iconName = props.Icon or "notifications"
-	local hasIcon = props.Icon ~= false and Icons.CanRender(iconName)
+	-- Icon: Material icon name or image (URL / rbxassetid); Image: a colored
+	-- image that isn't tinted.
+	local iconName = props.Image or props.Icon or "notifications"
+	local hasIcon = props.Icon ~= false and Base.CanShowIcon(iconName)
 	if hasIcon then
-		local icon = Create("TextLabel") {
-			Name = "Icon",
-			BackgroundTransparency = 1,
-			Size = UDim2.fromOffset(20, 20),
-			TextSize = 20,
-			Font = Enum.Font.GothamMedium,
-			ZIndex = 51,
-			Parent = card,
-		}
-		Icons.Apply(icon, iconName)
-		themer:Bind(icon, { TextColor3 = "Primary" })
+		local icon = Base.Glyph(themer, iconName, 20, "Primary", card, props.Image == nil)
+		icon.ZIndex = 51
+		hasIcon = icon.Visible
 	end
 
 	local textColumn = Create("Frame") {

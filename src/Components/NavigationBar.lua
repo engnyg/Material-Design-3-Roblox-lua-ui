@@ -23,6 +23,7 @@ local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
+local Assets = require(Root.Executor.Assets)
 
 local NavigationBar = {}
 NavigationBar.__index = NavigationBar
@@ -95,7 +96,7 @@ function NavigationBar.new(props)
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
 			Size = UDim2.fromOffset(24, 24),
-			Image = dest.Icon or "",
+			Image = Assets.Resolve(dest.Icon),
 			Parent = indicator,
 		}
 

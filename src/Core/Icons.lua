@@ -14,9 +14,16 @@
 		   or Asset Manager) and copy its rbxassetid.
 		3. MD3.Icons.SetFont(Font.new("rbxassetid://<your id>"))
 
-	Until SetFont is called, Icons.Apply() falls back to a small set of plain
-	glyph characters (still no font asset needed) so components render a
-	reasonable shape instead of a blank/tofu box.
+	On executors, MD3.IconFont.Load() does all of that automatically.
+
+	Until SetFont is called, Icons.Apply() falls back to Roblox's own
+	BuilderIcons font, which ships inside every Roblox client (no download,
+	no asset upload; icons are ligatures, i.e. the text "gear" renders as a
+	gear). Material names are mapped onto the closest BuilderIcons glyph.
+	Names with no BuilderIcons match fall back to a small set of plain glyph
+	characters, so components never show a blank/tofu box.
+
+	Any BuilderIcons glyph can also be used directly: Icons.Apply(label, "builder:sword").
 
 	local Icons = MD3.Icons
 	Icons.Apply(myTextLabel, "settings")   -- sets FontFace + Text
@@ -192,7 +199,132 @@ local FALLBACK_GLYPHS = {
 	done = "\u{2713}",
 }
 
+-- Roblox's built-in ligature icon font (the same one the Roblox app UI
+-- uses). Font.new doesn't throw for a missing file, so this is safe to
+-- create even if Roblox moves it; SetBuilderIconsEnabled(false) opts out.
+local BUILDER_FONT = Font.new(
+	"rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json",
+	Enum.FontWeight.Regular,
+	Enum.FontStyle.Normal
+)
+
+-- Material icon name -> closest BuilderIcons ligature.
+local BUILDER_NAMES = {
+	add = "plus-large",
+	alarm = "bell-clock",
+	arrow_back = "arrow-large-left",
+	arrow_drop_down = "caret-small-down",
+	arrow_drop_up = "caret-small-up",
+	arrow_forward = "arrow-large-right",
+	attach_file = "chain-link",
+	autorenew = "arrow-rotate-right",
+	backpack = "backpack",
+	bar_chart = "chart-three-vertical-bars",
+	block = "circle-slash",
+	bolt = "lightning-bolt",
+	bookmark = "bookmark",
+	build = "hammer-code",
+	calendar_today = "calendar",
+	camera_alt = "photo-camera",
+	cancel = "circle-x",
+	chat = "speech-bubble-round",
+	check = "check",
+	check_box = "square-check",
+	check_circle = "circle-check",
+	chevron_left = "chevron-large-left",
+	chevron_right = "chevron-large-right",
+	close = "x",
+	cloud = "cloud",
+	code = "code",
+	comment = "speech-bubble-round",
+	content_copy = "two-stacked-squares",
+	credit_card = "wallet",
+	dark_mode = "moon",
+	dashboard = "squares-grid-plus",
+	delete = "trash-can",
+	done = "check",
+	download = "arrow-down-to-line",
+	drag_handle = "three-bars-horizontal",
+	drag_indicator = "six-dots-two-column-grid",
+	edit = "pencil",
+	error = "triangle-exclamation",
+	event = "calendar",
+	expand_less = "chevron-small-up",
+	expand_more = "chevron-small-down",
+	explore = "compass",
+	favorite = "heart",
+	flag = "flag",
+	folder = "folder",
+	fullscreen = "dual-arrows-to-corners",
+	grid_view = "grid",
+	group = "two-people",
+	groups = "three-people",
+	help_outline = "circle-question",
+	history = "clock",
+	home = "house",
+	image = "image",
+	info = "circle-i",
+	keyboard_arrow_down = "chevron-small-down",
+	keyboard_arrow_left = "chevron-small-left",
+	keyboard_arrow_right = "chevron-small-right",
+	keyboard_arrow_up = "chevron-small-up",
+	language = "globe-simplified",
+	light_mode = "sun",
+	link = "chain-link",
+	list = "list-bulleted",
+	location_on = "location-pin",
+	lock = "lock-closed",
+	login = "door-open-arrow-to-bottom-right",
+	mail = "envelope",
+	menu = "three-bars-horizontal",
+	mic = "microphone",
+	mic_off = "microphone-slash",
+	minimize = "minus",
+	more_horiz = "three-dots-horizontal",
+	more_vert = "three-dots-vertical",
+	notifications = "bell",
+	open_in_new = "arrow-up-right-from-square",
+	palette = "paint-brush",
+	pause = "pause-large",
+	person = "person",
+	play_arrow = "play-large",
+	public = "globe-simplified",
+	refresh = "arrow-rotate-right",
+	remove = "minus",
+	reorder = "four-bars-horizontal-justified-aligned",
+	search = "magnifying-glass",
+	send = "paper-airplane",
+	settings = "gear",
+	shield = "shield-check",
+	shopping_cart = "shopping-cart",
+	skip_next = "skip-next-large",
+	skip_previous = "skip-previous-large",
+	sports_esports = "controller-with-cog",
+	star = "star",
+	stop = "stop-large",
+	swap_horiz = "two-arrows-left-right",
+	swap_vert = "two-arrows-down-and-up",
+	sync = "arrow-rotate-right",
+	tag = "hashtag",
+	thumb_down = "thumb-down",
+	thumb_up = "thumb-up",
+	timer = "clock",
+	schedule = "clock",
+	tune = "three-sliders-horizontal",
+	verified = "verified-check",
+	visibility = "eye",
+	visibility_off = "eye-slash",
+	volume_off = "speaker-slash",
+	volume_up = "speaker",
+	warning = "triangle-exclamation",
+	widgets = "nine-dots-grid",
+	zoom_in = "magnifying-glass-plus",
+	zoom_out = "magnifying-glass-minus",
+}
+
 Icons.Codepoints = CODEPOINTS
+Icons.BuilderNames = BUILDER_NAMES
+Icons.BuilderFont = BUILDER_FONT
 
 local iconFont: Font? = nil
 
@@ -209,19 +341,46 @@ function Icons.GetFont(): Font?
 	return iconFont
 end
 
--- Returns the actual glyph character for `name`, using the real Material
--- codepoint when a font has been configured, otherwise a plain fallback.
-function Icons.Glyph(name: string): string
-	if iconFont and CODEPOINTS[name] then
-		return utf8.char(CODEPOINTS[name])
-	end
-	return FALLBACK_GLYPHS[name] or (CODEPOINTS[name] and utf8.char(CODEPOINTS[name])) or "?"
+local builderEnabled = true
+
+-- BuilderIcons is on by default; turn it off to use only the Material font
+-- and the plain-character fallbacks.
+function Icons.SetBuilderIconsEnabled(enabled: boolean)
+	builderEnabled = enabled
 end
 
--- True when `name` renders as something meaningful right now (a real
--- Material glyph with the font set, or a plain fallback character).
+-- Resolves `name` to the text to display and the font to display it in
+-- (nil font = keep the label's own font). Priority: Material font ->
+-- BuilderIcons -> plain character.
+function Icons.Resolve(name: string): (string, Font?)
+	local builderName = name:match("^builder:(.+)$")
+	if builderName then
+		return builderName, BUILDER_FONT
+	end
+	if iconFont and CODEPOINTS[name] then
+		return utf8.char(CODEPOINTS[name]), iconFont
+	end
+	if builderEnabled and BUILDER_NAMES[name] then
+		return BUILDER_NAMES[name], BUILDER_FONT
+	end
+	return FALLBACK_GLYPHS[name] or (CODEPOINTS[name] and utf8.char(CODEPOINTS[name])) or "?", nil
+end
+
+-- The text Icons.Apply would put on a label for `name`.
+function Icons.Glyph(name: string): string
+	return (Icons.Resolve(name))
+end
+
+-- True when `name` renders as something meaningful right now (a Material
+-- glyph with the font set, a BuilderIcons glyph, or a plain fallback).
 function Icons.CanRender(name: string): boolean
-	return (iconFont ~= nil and CODEPOINTS[name] ~= nil) or FALLBACK_GLYPHS[name] ~= nil
+	if type(name) ~= "string" then
+		return false
+	end
+	return name:match("^builder:.+") ~= nil
+		or (iconFont ~= nil and CODEPOINTS[name] ~= nil)
+		or (builderEnabled and BUILDER_NAMES[name] ~= nil)
+		or FALLBACK_GLYPHS[name] ~= nil
 end
 
 -- Adds (or overrides) a glyph by codepoint, e.g. one from the official
@@ -232,9 +391,10 @@ end
 
 -- Applies the icon glyph + matching font onto a Text object in one call.
 function Icons.Apply(textObject: TextLabel | TextButton, name: string)
-	textObject.Text = Icons.Glyph(name)
-	if iconFont then
-		textObject.FontFace = iconFont
+	local text, font = Icons.Resolve(name)
+	textObject.Text = text
+	if font then
+		textObject.FontFace = font
 	end
 end
 

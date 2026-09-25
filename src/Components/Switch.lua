@@ -13,6 +13,7 @@ local Signal = require(Root.Util.Signal)
 local Theme = require(Root.Core.Theme)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
+local Assets = require(Root.Executor.Assets)
 
 local Switch = {}
 Switch.__index = Switch
@@ -69,7 +70,7 @@ function Switch.new(props)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(0.7, 0.7),
-		Image = props.CheckedIcon or "",
+		Image = Assets.Resolve(props.CheckedIcon),
 		ImageTransparency = 1,
 		Parent = thumb,
 	}

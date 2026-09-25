@@ -4,7 +4,8 @@
 	local Window = MD3:CreateWindow({
 		Title = "My Hub",
 		Subtitle = "v1.0",
-		Icon = "widgets",                  -- Material icon name (optional)
+		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
+		Logo = "https://.../logo.png",     -- colored image shown instead of Icon (not tinted)
 		Size = UDim2.fromOffset(600, 420),
 		Mode = "Dark",                     -- "Light" | "Dark"
 		Seed = Color3.fromHex("#6750A4"),  -- accent / seed color
@@ -207,11 +208,17 @@ function Window.new(props)
 		Parent = main,
 	}
 
-	local hasAppIcon = props.Icon ~= nil and Icons.CanRender(props.Icon)
+	-- Logo = a colored image kept as-is; Icon = a tinted Material icon or image.
+	local appIconSource = props.Logo or props.Icon
+	local hasAppIcon = appIconSource ~= nil and Base.CanShowIcon(appIconSource)
 	if hasAppIcon then
-		local appIcon = Base.Glyph(themer, props.Icon, 24, "Primary", topBar)
+		local appIcon = Base.Glyph(themer, appIconSource, 24, "Primary", topBar, props.Logo == nil)
 		appIcon.AnchorPoint = Vector2.new(0, 0.5)
 		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
+		hasAppIcon = appIcon.Visible
+		if not hasAppIcon then
+			appIcon:Destroy()
+		end
 	end
 
 	local titleColumn = Create("Frame") {
@@ -372,7 +379,8 @@ function Window.new(props)
 		}
 		Shape.Corner(Shape.Large, mobileButton)
 		themer:Bind(mobileButton, { BackgroundColor3 = "PrimaryContainer" })
-		local glyph = Base.Glyph(themer, props.Icon and Icons.CanRender(props.Icon) and props.Icon or "menu", 24, "OnPrimaryContainer", mobileButton)
+		local source = props.Logo or (props.Icon and Base.CanShowIcon(props.Icon) and props.Icon) or "menu"
+		local glyph = Base.Glyph(themer, source, props.Logo and 32 or 24, "OnPrimaryContainer", mobileButton, props.Logo == nil)
 		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
 		glyph.Position = UDim2.fromScale(0.5, 0.5)
 		glyph.ZIndex = 61

@@ -14,6 +14,7 @@ local Window = MD3:CreateWindow({
 	Title = "MD3 Hub",
 	Subtitle = "Material Design 3 for executors",
 	Icon = "widgets",
+	-- Logo = "https://.../logo.png",   -- a colored image shown as-is instead of Icon
 	Mode = "Dark",
 	Seed = Color3.fromHex("#6750A4"),
 	ToggleKey = Enum.KeyCode.RightShift,
@@ -106,7 +107,13 @@ Misc:AddButton({
 })
 
 --== Elements tab: one of everything ==--
-local Demo = Window:AddTab({ Title = "Elements", Icon = "tune" })
+-- Icon / Logo / Image props also take image URLs: downloaded once, then
+-- loaded through getcustomasset (see MD3.Assets). Monochrome icons like this
+-- one get tinted with the theme color.
+local Demo = Window:AddTab({
+	Title = "Elements",
+	Icon = "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/extension/materialicons/48dp/2x/baseline_extension_black_48dp.png",
+})
 
 Demo:AddParagraph({
 	Title = "About",

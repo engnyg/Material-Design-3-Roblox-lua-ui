@@ -22,6 +22,7 @@ local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Elevation = require(Root.Core.Elevation)
+local Assets = require(Root.Executor.Assets)
 
 local Button = {}
 Button.__index = Button
@@ -96,7 +97,7 @@ function Button.new(props)
 		icon = Create("ImageLabel") {
 			Name = "Icon",
 			BackgroundTransparency = 1,
-			Image = props.Icon,
+			Image = Assets.Resolve(props.Icon),
 			Size = UDim2.fromOffset(18, 18),
 			LayoutOrder = 1,
 			Parent = content,

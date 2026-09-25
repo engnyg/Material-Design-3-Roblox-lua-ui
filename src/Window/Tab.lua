@@ -189,7 +189,7 @@ function Tab:_paint()
 	}):Play()
 	local content = active and c.OnSecondaryContainer or c.OnSurfaceVariant
 	self._label.TextColor3 = content
-	self._icon.TextColor3 = content
+	Base.SetIconColor(self._icon, content)
 	self._stateLayer:SetColor(c.OnSurface)
 end
 

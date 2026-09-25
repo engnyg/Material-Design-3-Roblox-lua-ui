@@ -10,6 +10,7 @@ local Shape = require(Root.Core.Shape)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Icons = require(Root.Core.Icons)
+local Assets = require(Root.Executor.Assets)
 
 local Base = {}
 
@@ -102,9 +103,27 @@ function Base.Finish(element)
 	return element
 end
 
--- A Material icon glyph as a TextLabel; hidden when neither the icon font
--- nor a fallback character can draw it.
-function Base.Glyph(themer, name: string, size: number, role, parent: Instance?)
+-- An icon: either an image (URL / rbxassetid / workspace file, loaded via
+-- Assets) as an ImageLabel, or a Material icon name as a glyph TextLabel.
+-- Hidden when it can't be drawn. `role` tints it with a theme color; pass
+-- tint = false to keep a colored image (e.g. a logo) as-is.
+function Base.Glyph(themer, name, size: number, role, parent: Instance?, tint: boolean?)
+	if Assets.IsImage(name) then
+		local image = Create("ImageLabel") {
+			Name = "Icon",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(size, size),
+			Image = Assets.Resolve(name),
+			ScaleType = Enum.ScaleType.Fit,
+			Parent = parent,
+		}
+		image.Visible = image.Image ~= ""
+		if role and tint ~= false then
+			themer:Bind(image, { ImageColor3 = role })
+		end
+		return image
+	end
+
 	local label = Create("TextLabel") {
 		Name = "Icon",
 		BackgroundTransparency = 1,
@@ -119,6 +138,20 @@ function Base.Glyph(themer, name: string, size: number, role, parent: Instance?)
 		themer:Bind(label, { TextColor3 = role })
 	end
 	return label
+end
+Base.Icon = Base.Glyph
+
+function Base.CanShowIcon(icon): boolean
+	return Assets.IsImage(icon) or Icons.CanRender(icon)
+end
+
+-- Colors an icon made by Base.Glyph, whichever kind it is.
+function Base.SetIconColor(icon: GuiObject, color: Color3)
+	if icon:IsA("ImageLabel") then
+		icon.ImageColor3 = color
+	else
+		icon.TextColor3 = color
+	end
 end
 
 --[[

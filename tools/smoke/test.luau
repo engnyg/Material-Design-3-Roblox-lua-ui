@@ -25,9 +25,17 @@ end
 local genv = {}
 getgenv = function() return genv end
 identifyexecutor = function() return "MockExecutor", "1.0" end
+local httpRequests = {}
 game.HttpGet = function(_, url)
-	assert(url:find("MaterialIcons%-Regular%.ttf"), `unexpected HttpGet {url}`)
-	return string.rep("x", 20000)
+	table.insert(httpRequests, url)
+	if url:find("MaterialIcons%-Regular%.ttf") then
+		return string.rep("x", 20000)
+	elseif url:find("%.png") then
+		return "\137PNG fake image bytes"
+	elseif url:find("notfound") then
+		return "<!DOCTYPE html><html>404</html>"
+	end
+	error(`unexpected HttpGet {url}`)
 end
 
 local chunk, loadErr = loadstring(BUNDLE_SOURCE, "=MaterialDesign3")
@@ -151,8 +159,17 @@ check(theme.Mode == "Dark", "Theme did not toggle")
 theme:SetSeedColor(Color3.fromHex("#006C51"))
 theme:Toggle()
 
--- Icons: plain fallback until a font is set, real Material codepoint after
-check(MD3.Icons.Glyph("check") == "\u{2713}", "Icons fallback glyph wrong")
+-- Icons: Roblox BuilderIcons until a font is set (or plain characters with
+-- BuilderIcons off), real Material codepoint after
+local probe = Instance.new("TextLabel")
+MD3.Icons.Apply(probe, "settings")
+check(probe.Text == "gear" and probe.FontFace == MD3.Icons.BuilderFont, "BuilderIcons fallback wrong")
+MD3.Icons.Apply(probe, "builder:sword")
+check(probe.Text == "sword", "builder: prefix not honored")
+MD3.Icons.SetBuilderIconsEnabled(false)
+check(MD3.Icons.Glyph("check") == "\u{2713}", "Icons plain fallback glyph wrong")
+check(not MD3.Icons.CanRender("settings"), "CanRender should be false without any icon font")
+MD3.Icons.SetBuilderIconsEnabled(true)
 MD3.Icons.SetFont(Font.new("rbxassetid://0"))
 check(MD3.Icons.Glyph("check") == utf8.char(0xe5ca), "Icons codepoint wrong")
 
@@ -168,6 +185,22 @@ check(#Env.RandomName() == 12, "Env.RandomName length")
 local font = MD3.IconFont.Load("MD3")
 check(font ~= nil and files["MD3/MaterialIcons-Regular.ttf"] ~= nil, "IconFont did not download + load")
 
+-- External images: HttpGet -> writefile -> getcustomasset (cached)
+local Assets = MD3.Assets
+local logoUrl = "https://raw.githubusercontent.com/someone/repo/main/assets/logo.png?raw=true"
+local logo = Assets.Resolve(logoUrl)
+check(logo:match("^rbxasset://custom/MD3/assets/%x+_logo%.png$") ~= nil, `Assets.Resolve(url) gave {logo}`)
+local requestsBefore = #httpRequests
+check(Assets.Resolve(logoUrl) == logo and #httpRequests == requestsBefore, "Assets did not cache the download")
+check(Assets.Resolve(123) == "rbxassetid://123" and Assets.Resolve("456") == "rbxassetid://456", "Assets numeric ids")
+check(Assets.Resolve("rbxassetid://7") == "rbxassetid://7", "Assets should pass rbxassetid through")
+check(Assets.Resolve("https://example.com/notfound") == "", "Assets accepted an HTML error page")
+writefile("MyHub/icon.png", "bytes")
+check(Assets.Resolve("MyHub/icon.png") == "rbxasset://custom/MyHub/icon.png", "Assets workspace file")
+check(Assets.IsImage(logoUrl) and not Assets.IsImage("settings"), "Assets.IsImage")
+local imageButton = MD3.IconButton.new({ Icon = logoUrl, Parent = screen })
+check(imageButton._icon.Image == logo, "component Icon prop did not resolve the URL")
+
 local host = Instance.new("ScreenGui")
 local loadedCallbacks = {}
 local function record(name)
@@ -180,6 +213,7 @@ local Window = MD3:CreateWindow({
 	Title = "Smoke Hub",
 	Subtitle = "test",
 	Icon = "widgets",
+	Logo = logoUrl,
 	Parent = host,
 	MobileButton = true,
 	ConfigFolder = "SmokeHub",
@@ -189,7 +223,8 @@ check(Window.Theme.Mode == "Dark", "Window should default to dark mode")
 
 local main = Window:AddTab({ Title = "Main", Icon = "home" })
 check(Window.SelectedTab == main and main.Instance.Visible, "first tab not auto-selected")
-local other = Window:CreateTab("Other")
+local other = Window:CreateTab({ Title = "Other", Icon = logoUrl })
+check(other._icon:IsA("ImageLabel") and other._icon.Image == logo, "Tab image icon not loaded")
 local section = main:AddSection("Combat")
 
 local clicks = 0
@@ -253,6 +288,7 @@ check(Window.Minimized, "Window did not minimize")
 Window:Minimize(false)
 
 Window:Notify({ Title = "Hi", Content = "there", Duration = 1 })
+Window:Notify({ Title = "Img", Image = logoUrl, Duration = 1 })
 local dialog = Window:Dialog({ Title = "Q", Content = "?", Buttons = { { Title = "OK", Callback = record("dialog") } } })
 check(dialog.Instance.Visible, "Window:Dialog did not show")
 

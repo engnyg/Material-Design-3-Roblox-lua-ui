@@ -12,7 +12,8 @@ local MD3 = loadstring(game:HttpGet(
 local Window = MD3:CreateWindow({
     Title = "My Hub",
     Subtitle = "v1.0",
-    Icon = "widgets",                    -- Material 圖標名稱（可省略）
+    Icon = "widgets",                    -- Material 圖標名稱，或圖片（網址／rbxassetid）
+    Logo = "https://raw.githubusercontent.com/<你>/<repo>/main/logo.png", -- 彩色 Logo 圖片（不套色，可省略）
     Mode = "Dark",                       -- "Light" | "Dark"
     Seed = Color3.fromHex("#6750A4"),    -- 主題種子色，整套配色由它生成
     ToggleKey = Enum.KeyCode.RightShift, -- 顯示／隱藏視窗
@@ -48,7 +49,8 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 - **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
 - **防偵測／相容性**：ScreenGui 優先放進 `gethui()`，其次 `CoreGui`，最後才是 `PlayerGui`；有 `syn.protect_gui` / `protectgui` 會自動套用；ScreenGui 名稱隨機。
 - **重複執行不會疊視窗**：同一個 `Title`（或 `Id`）的視窗再次建立時，舊的會先被卸載（透過 `getgenv()` 記錄）。
-- **真正的 Material 圖標**：支援 `writefile` + `getcustomasset` 的 executor 會自動下載 Google 官方 Material Icons 字型（Apache-2.0）並載入，不需要上傳任何資產；不支援時退回簡單符號，不會出現方塊字。
+- **真正的 Material 圖標**：支援 `writefile` + `getcustomasset` 的 executor 會自動下載 Google 官方 Material Icons 字型（Apache-2.0）並載入，不需要上傳任何資產；不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字。
+- **外部圖片**：所有 `Icon` / `Logo` / 通知的 `Image` 都可以直接填網址，會自動下載並透過 `getcustomasset` 載入（見下方「載入外部圖片」）。
 - **設定檔**：`Window:SaveConfig(name)` / `LoadConfig(name)` / `ListConfigs()` / `DeleteConfig(name)` / `SetAutoLoad(name)`，存成 JSON（Color3、KeyCode 會自動序列化）。
 - **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetSeedColor(color)`，整個視窗立即重新上色。
 - **Callback 錯誤不會弄壞 UI**：所有 Callback 都在 `xpcall` 中執行，錯誤只會 `warn` 出來。
@@ -72,6 +74,25 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
 `Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+
+### 載入外部圖片（`MD3.Assets`）
+
+做法參考 [NeverLose](https://github.com/engnyg/NeverLose)：`game:HttpGet` 下載圖片 → `writefile` 存進 executor workspace（`MD3/assets/`）→ `getcustomasset` 轉成可以放進 `ImageLabel.Image` 的內容 ID。下載過的檔案會留在磁碟上，之後直接讀取；同一次執行內也會快取。
+
+```lua
+-- 任何 Image 都能用
+imageLabel.Image = MD3.Assets.Resolve("https://raw.githubusercontent.com/<你>/<repo>/main/assets/logo.png")
+
+-- MD3 的 Icon / Logo 參數都會自動經過 Assets.Resolve
+local Window = MD3:CreateWindow({ Title = "My Hub", Logo = "https://.../logo.png" })
+Window:AddTab({ Title = "Combat", Icon = "https://.../sword.png" }) -- 圖片分頁圖示（會套主題色）
+Window:Notify({ Title = "Hi", Image = "https://.../avatar.png" })      -- 彩色圖片（不套色）
+MD3.Button.new({ Text = "Go", Icon = "https://.../go.png" })
+
+MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭先背景下載
+```
+
+`Assets.Resolve` 接受：網址（`http(s)://`）、`rbxassetid://…`／`rbxasset://…`／`rbxthumb://…`、純數字 ID（`123456` → `rbxassetid://123456`）、或 workspace 內已有的檔案路徑（`"MyHub/icon.png"`）。下載失敗（例如拿到 GitHub 的 404 HTML 頁）或 executor 不支援 `getcustomasset` 時回傳 `""`（不顯示圖片），不會丟錯。GitHub 圖片請用 `raw.githubusercontent.com/...` 或 `github.com/.../blob/main/xxx.png?raw=true` 這種直接下載的網址。
 
 ### Executor 環境工具（`MD3.Env`）
 
@@ -175,6 +196,7 @@ end)
 ## Executor 層（`src/Executor`、`src/Window`）
 
 - `Executor/Env.lua`：executor 全域函式的相容層（見上方「Executor 環境工具」）。
+- `Executor/Assets.lua`：外部圖片載入（見上方「載入外部圖片」）；所有元件的 `Icon` 參數都透過它解析。
 - `Executor/IconFont.lua`：`MD3.IconFont.Load()` 下載 `MaterialIcons-Regular.ttf` → 寫進 workspace → 產生 Roblox font family JSON → 用 `getcustomasset` 載入，並自動呼叫 `Icons.SetFont`。`CreateWindow` 預設會做這件事（`IconFont = false` 可關閉）。
 - `Window/Window.lua`、`Window/Tab.lua`：視窗、分頁與 Section。
 - `Window/Elements/*`：各個視窗元件；列表項目版面（標題／說明／右側控制項）共用 `Elements/Base.lua`。
@@ -183,7 +205,11 @@ end)
 
 ## 圖標（不用 emoji）
 
-**在 executor 上不用做任何事**：`CreateWindow` 會自動用 `MD3.IconFont.Load()` 下載並載入官方字型（需要 executor 支援 `writefile` 與 `getcustomasset`）。以下是 Studio／自己遊戲裡的做法。
+**在 executor 上不用做任何事**：`CreateWindow` 會自動用 `MD3.IconFont.Load()` 下載並載入官方字型（需要 executor 支援 `writefile` 與 `getcustomasset`）。
+
+**沒有 Material 字型時**（executor 不支援 `getcustomasset`、或在 Studio 還沒設定字型），圖標會改用 Roblox 客戶端本身就有的 **BuilderIcons** 字型（`rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json`，Roblox App 介面用的那套）。它是連字（ligature）字型——文字 `gear` 會畫成齒輪——`Icons.lua` 內建了 Material 名稱到 BuilderIcons 名稱的對照表（`settings` → `gear`、`close` → `x`…）。也可以直接用任何 BuilderIcons 圖標：`Icon = "builder:sword"`。不想用可以呼叫 `MD3.Icons.SetBuilderIconsEnabled(false)`。優先順序：Material 字型 → BuilderIcons → 簡單符號。
+
+以下是在 Studio／自己遊戲裡使用 Material 字型的做法。
 
 Roblox 沒有內建 Material Symbols 字型，所以要顯示「真正的」M3 平面圖標，本質上一定要一個圖標字型資產——沒有捷徑。`Icons.lua` 幫你把這件事做成一次性設定：
 

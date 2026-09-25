@@ -17,6 +17,7 @@ local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
 local Elevation = require(Root.Core.Elevation)
+local Assets = require(Root.Executor.Assets)
 
 local FAB = {}
 FAB.__index = FAB
@@ -80,7 +81,7 @@ function FAB.new(props)
 		Name = "Icon",
 		BackgroundTransparency = 1,
 		Size = UDim2.fromOffset(ICON_SIZES[self._size], ICON_SIZES[self._size]),
-		Image = props.Icon or "",
+		Image = Assets.Resolve(props.Icon),
 		LayoutOrder = 1,
 		Parent = content,
 	}
