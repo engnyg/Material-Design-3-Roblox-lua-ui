@@ -24,6 +24,7 @@ MD3.Motion = require(script.Core.Motion)
 MD3.Elevation = require(script.Core.Elevation)
 MD3.StateLayer = require(script.Core.StateLayer)
 MD3.Ripple = require(script.Core.Ripple)
+MD3.Icons = require(script.Core.Icons)
 
 -- Utilities (exposed in case consumers want to build custom components the same way)
 MD3.Color = require(script.Util.Color)

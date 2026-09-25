@@ -19,6 +19,7 @@ local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
 local Ripple = require(Root.Core.Ripple)
+local Icons = require(Root.Core.Icons)
 
 local Chip = {}
 Chip.__index = Chip
@@ -101,11 +102,11 @@ function Chip.new(props)
 			AutoButtonColor = false,
 			BackgroundTransparency = 1,
 			Size = UDim2.fromOffset(18, 18),
-			Text = "\u{2715}",
 			TextScaled = true,
 			LayoutOrder = 3,
 			Parent = chip,
 		}
+		Icons.Apply(removeButton, "close")
 	end
 	self._removeButton = removeButton
 
@@ -155,6 +156,7 @@ function Chip:_applyTheme()
 		self._leadingIcon.ImageTransparency = self._disabled and 0.62 or 0
 	end
 	if self._removeButton then
+		Icons.Apply(self._removeButton, "close")
 		self._removeButton.TextColor3 = onColor
 		self._removeButton.TextTransparency = self._disabled and 0.62 or 0
 	end

@@ -14,6 +14,7 @@ local Theme = require(Root.Core.Theme)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
 local StateLayer = require(Root.Core.StateLayer)
+local Icons = require(Root.Core.Icons)
 
 local Checkbox = {}
 Checkbox.__index = Checkbox
@@ -58,17 +59,18 @@ function Checkbox.new(props)
 	}
 	self._stroke = stroke
 
-	-- Drawn as text glyphs (checkmark / dash) rather than an image asset, so
-	-- the component doesn't depend on a specific rbxassetid existing.
+	-- Drawn as a Material icon glyph (check / remove) rather than an image
+	-- asset. Renders the real Material Design flat icon once you've called
+	-- MD3.Icons.SetFont(...); falls back to a plain glyph until then — see
+	-- Core/Icons.lua for setup.
 	local mark = Create("TextLabel") {
 		Name = "Mark",
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.48),
+		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromScale(0.85, 0.85),
 		Font = Enum.Font.GothamBold,
 		TextScaled = true,
-		Text = "\u{2713}",
 		Parent = box,
 	}
 	self._mark = mark
@@ -108,7 +110,7 @@ function Checkbox:_render(animate: boolean)
 	apply(self._box, { BackgroundColor3 = boxColor, BackgroundTransparency = boxTransparency })
 	apply(self._mark, { TextColor3 = markColor, TextTransparency = checked and 0 or 1 })
 
-	self._mark.Text = self._value == "Indeterminate" and "\u{2212}" or "\u{2713}"
+	Icons.Apply(self._mark, self._value == "Indeterminate" and "remove" or "check")
 
 	self._stroke.Color = borderColor
 	self._stroke.Transparency = checked and 1 or borderTransparency

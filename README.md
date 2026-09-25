@@ -80,10 +80,25 @@ end)
 - `Motion.lua`：M3 動效時長 token 及對應 Roblox `TweenInfo`（Roblox 的 `TweenInfo` 不支援任意貝茲曲線，這裡取最接近的內建 EasingStyle）。
 - `Elevation.lua`：用多層半透明圓角 Frame 疊出來的柔和陰影，不需圖片素材；會自動跟著目標元件的位置/大小同步。
 - `StateLayer.lua` / `Ripple.lua`：hover/press/focus 疊層與水波紋回饋。
+- `Icons.lua`：Material 平面圖標系統，見下方「圖標（不用 emoji）」。
+
+## 圖標（不用 emoji）
+
+Roblox 沒有內建 Material Symbols 字型，所以要顯示「真正的」M3 平面圖標，本質上一定要一個圖標字型資產——沒有捷徑。`Icons.lua` 幫你把這件事做成一次性設定：
+
+1. 到 [google/material-design-icons](https://github.com/google/material-design-icons)（Apache-2.0）下載 Material Symbols/Icons 的 `.ttf`。
+2. 在 Roblox Studio 把這個字型檔上傳成 Font 資產，拿到它的 `rbxassetid`。
+3. 遊戲啟動時執行一次：
+   ```lua
+   MD3.Icons.SetFont(Font.new("rbxassetid://<你的字型資產ID>"))
+   ```
+
+設定完成後，`Checkbox` 的勾勾／減號、`Chip` 的關閉按鈕都會自動改用 `Icons.lua` 內建的 Material 圖標字碼（`check`、`remove`、`close`…共 110+ 個，字碼取自官方 `MaterialIcons-Regular.codepoints`），純文字字元渲染、可直接套色/縮放，不是圖片、更不是 emoji。在呼叫 `SetFont` 之前，這些元件會先用簡單的幾何符號（`✓`/`−`/`✕`）當退場機制，避免字型未設定時顯示空白方塊；一旦設定字型就會自動切換成真正的 Material 圖標。
+
+`Icons.Glyph("settings")` / `Icons.Apply(textObject, "settings")` 也可以在你自己的 UI 裡直接使用，或用來取代 `Button` / `IconButton` / `FAB` 目前吃的 `Icon = "rbxassetid://..."`（把 `Icon` 換成一個帶有 Material 圖標字型的 `TextLabel` 即可）。
 
 ## 已知取捨
 
 - 色彩生成用 HSL 近似 HCT，色階曲線與官方 Material Theme Builder 不會 100% 一致，但保留了 M3 的分層邏輯（13 級色調、container/on-container 配對等）。
 - 陰影用堆疊 Frame 模擬柔邊效果，效果不如向量陰影細緻，但完全不需要外部貼圖資源；若想要更精緻的陰影，可以自行替換 `Elevation.Apply` 的實作改用你上傳的陰影圖。
-- Checkbox 的勾勾／減號是用文字字元（`✓`/`−`）畫的，避免依賴不確定存在的內建圖片資產 ID；如果想用向量圖示，直接把 `Checkbox.lua` 裡的 `TextLabel` 換成你自己的 `ImageLabel` 即可。
-- 範例與元件預設沒有帶任何 `rbxassetid://` 圖示，因為每個 Roblox 專案的圖示資源都不同；請把你自己上傳的圖示 ID 傳進 `Icon` / `NavigationIcon` 等 props。
+- `Button` / `IconButton` / `FAB` / `TopAppBar` / `NavigationBar` 的 `Icon` props 目前吃圖片資產（`rbxassetid://...`），因為每個 Roblox 專案的圖示資源都不同；請把你自己上傳的圖示 ID 傳進去，或改用上面的 `Icons.lua` 文字圖標方案。
