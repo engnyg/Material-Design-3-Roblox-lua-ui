@@ -16,6 +16,7 @@ local Window = MD3:CreateWindow({
     Logo = "https://raw.githubusercontent.com/<你>/<repo>/main/logo.png", -- 彩色 Logo 圖片（不套色，可省略）
     Mode = "Dark",                       -- "Light" | "Dark"
     ThemeColor = Color3.fromHex("#6750A4"), -- 主題色，整套配色由它生成
+    Preset = nil,                        -- 內建主題，例如 "NeverLose"（見下方主題編輯器）
     IconColor = nil,                     -- 所有圖標的顏色（Color3，可省略）
     TextColor = nil,                     -- 所有文字的顏色（Color3，可省略；說明文字會自動用淡一點的同色）
     ToggleKey = Enum.KeyCode.RightShift, -- 顯示／隱藏視窗
@@ -197,7 +198,7 @@ local image, transparency = Window:GetBackground()
 
 `Window:AddSettingsTab()` 的設定頁裡有「Theme editor」區塊（也可以用 `Window:AddThemeEditor(tab)` 放進你自己的分頁；不給參數會另開一個「Theme」分頁）：
 
-- **Preset**：快速套用預設配色（Baseline／Blue／Teal／Green／Yellow／Orange／Red／Pink），等於換主題色（種子色）。
+- **Preset**：快速套用內建主題。Baseline／Blue／Teal／Green／Yellow／Orange／Red／Pink 只換主題色（你自訂的顏色保留）；**NeverLose** 是完整主題，照 [NeverLose](https://github.com/engnyg/NeverLose) 的配色：深色模式、近黑底色（`#08080D`）、石板灰外框（`#2D303A`）、白色文字、`#4E7FFC` 藍色強調色。NeverLose 的強調色直接等於主題色，所以套用後在 Appearance 換「Theme color」，按鈕、開關、選中分頁圖標會一起換成新顏色，底色與文字保持 NeverLose 風格。從 NeverLose 換到別的主題時，它設定的顏色會自動拿掉（你自己改過的保留）；「Reset custom colors」也會完全回到自動生成的配色。程式裡：`MD3:CreateWindow({ Preset = "NeverLose" })`（同時給 `ThemeColor`／`Mode` 的話以它們為準）或 `Window.Theme:ApplyPreset("NeverLose")`；清單在 `MD3.Theme.Presets`。
 - **每個顏色一個選色器**：Primary、Secondary、Tertiary、Selection（選取底色）、Background、Content panel、Rows、Text、Secondary text、Outline、**Icons**（一般圖標）、**Accent icons**（標題列／通知圖標）、**Selected tab icon**（選中分頁的圖標）、Error。改過的顏色會標「custom」。
 - **Reset custom colors**：清掉自訂顏色，回到由主題色自動生成的配色。
 - **Copy theme**／**Import theme**：把主題（主題色、深淺模式、自訂顏色）複製成 JSON 分享，或貼上 JSON 匯入。

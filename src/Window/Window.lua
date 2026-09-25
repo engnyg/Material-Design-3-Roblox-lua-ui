@@ -6,6 +6,7 @@
 		Subtitle = "v1.0",
 		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
 		ThemeColor = Color3.fromHex("#6750A4"), -- theme (seed) color the palette is generated from
+		Preset = nil,                      -- built-in theme preset, e.g. "NeverLose" (Theme.Presets)
 		IconColor = nil,                   -- color of every icon (Color3); default follows the theme
 		TextColor = nil,                   -- color of all text (Color3); secondary text follows it
 		AppIconColor = nil,                -- just the title-bar icon: theme role or Color3
@@ -162,6 +163,19 @@ function Window.new(props)
 	end
 
 	self.Theme = props.Theme or Theme.new(props.ThemeColor or props.Seed or props.Accent, props.Mode or "Dark")
+	-- A preset first; explicit ThemeColor / Mode / TextColor / IconColor win over it.
+	if props.Preset and not props.Theme then
+		if not self.Theme:ApplyPreset(props.Preset) then
+			warn(`[MD3] unknown theme preset "{props.Preset}"`)
+		end
+		local seed = props.ThemeColor or props.Seed or props.Accent
+		if seed then
+			self.Theme:SetSeedColor(seed)
+		end
+		if props.Mode then
+			self.Theme:SetMode(props.Mode)
+		end
+	end
 	if props.TextColor then
 		self.Theme:SetTextColor(props.TextColor)
 	end
@@ -1369,13 +1383,11 @@ function Window:AddThemeEditor(container)
 	end
 	section:AddDropdown({
 		Title = "Preset",
-		Description = "Base palette (custom colors below are kept)",
+		Description = "Palette to start from. Custom colors below are kept; NeverLose also sets its own dark colors",
 		Options = presetNames,
 		Callback = function(name)
-			for _, preset in Theme.Presets do
-				if preset.Name == name then
-					theme:SetSeedColor(Color3.fromHex(preset.Seed))
-				end
+			if name then
+				theme:ApplyPreset(name)
 			end
 		end,
 	})
@@ -1456,14 +1468,14 @@ function Window:AddThemeEditor(container)
 	-- generated colors too and stop them following the accent color).
 	-- Value: { Colors = { [role] = Color3 }, Transparency = { [role] = number } }
 	local function current()
-		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies() }
+		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies(), Follow = theme:GetFollow() }
 	end
 	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = current() }
 	function overridesFlag:Set(value)
 		if type(value) ~= "table" then
 			theme:ClearOverrides()
 		elseif value.Colors or value.Transparency then
-			theme:SetOverrides(value.Colors or {}, value.Transparency or {})
+			theme:SetOverrides(value.Colors or {}, value.Transparency or {}, value.Follow or {})
 		else
 			theme:SetOverrides(value, {}) -- configs saved before transparency existed
 		end

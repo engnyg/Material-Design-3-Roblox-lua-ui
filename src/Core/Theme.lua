@@ -177,6 +177,31 @@ function Theme:_build()
 	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
 	colors.IconAccent = overrides.IconAccent or overrides.Icon or colors.Primary
 	colors.IconSelected = overrides.IconSelected or overrides.Icon or colors.OnSecondaryContainer
+	-- Roles a preset links to another role, or to "Seed" (the theme color
+	-- itself), so they keep matching when it changes: NeverLose's accent is
+	-- exactly the theme color and its selected tab icon is the accent. An
+	-- override on the role still wins. A linked role's text color (ON_PAIRS)
+	-- gets a readable contrast color unless it is overridden too.
+	local function resolve(role, depth)
+		local source = self._follow[role]
+		if overrides[role] or not source or depth > 4 then
+			return colors[role]
+		elseif source == "Seed" then
+			return self.Seed
+		end
+		return resolve(source, depth + 1)
+	end
+	local linked = {}
+	for role in self._follow do
+		linked[role] = resolve(role, 0)
+	end
+	for role, color in linked do
+		colors[role] = color
+		local onRole = ON_PAIRS[role]
+		if onRole and not overrides[role] and not overrides[onRole] then
+			colors[onRole] = self:ContrastColor(color)
+		end
+	end
 	-- HUD (watermark, keybind list, indicators): colors follow the window's
 	-- rows / outline / text unless set, but transparency is the HUD's own.
 	colors.HUDBackground = overrides.HUDBackground or colors.SurfaceContainerHigh
@@ -226,6 +251,7 @@ function Theme.new(seed: Color3?, mode: string?)
 	self._palettes = buildPalettes(self.Seed)
 	self._overrides = {}
 	self._transparency = {}
+	self._follow = {}
 	self.Colors = self:_build()
 	self.Changed = Signal.new()
 	return self
@@ -286,9 +312,13 @@ function Theme:SetTransparency(role: string, transparency: number?)
 end
 
 -- Replaces all overrides at once: colors ({ [role] = Color3 }) and,
--- optionally, transparencies ({ [role] = number }; nil keeps the current).
-function Theme:SetOverrides(overrides: { [string]: Color3 }?, transparency: { [string]: number }?)
+-- optionally, transparencies ({ [role] = number }) and role links
+-- ({ [role] = sourceRole }, see Presets' Follow); nil keeps the current.
+function Theme:SetOverrides(overrides: { [string]: Color3 }?, transparency: { [string]: number }?, follow: { [string]: string }?)
 	self._overrides = table.clone(overrides or {})
+	if follow then
+		self._follow = table.clone(follow)
+	end
 	if transparency then
 		self._transparency = {}
 		for role, value in transparency do
@@ -307,12 +337,18 @@ function Theme:GetTransparencies(): { [string]: number }
 	return table.clone(self._transparency)
 end
 
+-- Role links set by a preset ({ IconSelected = "Primary" }).
+function Theme:GetFollow(): { [string]: string }
+	return table.clone(self._follow)
+end
+
 function Theme:IsOverridden(role: string): boolean
 	return self._overrides[role] ~= nil or self._transparency[role] ~= nil
 end
 
 function Theme:ClearOverrides()
-	self:SetOverrides({}, {})
+	self._presetOverrides = nil
+	self:SetOverrides({}, {}, {})
 end
 
 -- Plain table describing the theme (hex strings), e.g. to share as JSON:
@@ -328,6 +364,7 @@ function Theme:Export()
 		Mode = self.Mode,
 		Overrides = overrides,
 		Transparency = table.clone(self._transparency),
+		Follow = if next(self._follow) then table.clone(self._follow) else nil,
 	}
 end
 
@@ -346,6 +383,8 @@ function Theme:Import(data)
 		overrides[role] = Color3.fromHex(hex)
 	end
 	self._overrides = overrides
+	self._presetOverrides = nil
+	self._follow = table.clone(data.Follow or {})
 	self._transparency = {}
 	for role, value in data.Transparency or {} do
 		self._transparency[role] = cleanTransparency(value)
@@ -372,7 +411,9 @@ Theme.EditableRoles = {
 	{ Role = "Error", Name = "Error" },
 }
 
--- Seed colors for quick theme presets (M3 baseline + common hues).
+-- Theme presets. Most are just a seed color (M3 baseline + common hues);
+-- a "full" preset also sets the mode and pins colors (Overrides, hex) to
+-- reproduce a specific look. Apply with Theme:ApplyPreset(name).
 Theme.Presets = {
 	{ Name = "Baseline", Seed = "6750A4" },
 	{ Name = "Blue", Seed = "0061A4" },
@@ -382,7 +423,76 @@ Theme.Presets = {
 	{ Name = "Orange", Seed = "8B5000" },
 	{ Name = "Red", Seed = "B3261E" },
 	{ Name = "Pink", Seed = "984061" },
+	-- The colors of the NeverLose UI (github.com/engnyg/NeverLose): near-black
+	-- surfaces, slate outlines, white text, #4E7FFC accent.
+	{
+		Name = "NeverLose",
+		Seed = "4E7FFC",
+		Mode = "Dark",
+		Overrides = {
+			OnPrimary = "FFFFFF", -- white on the accent (switch thumb, buttons)
+			Surface = "08080D", -- window
+			SurfaceContainerLow = "0D1116", -- content panel
+			SurfaceContainerHigh = "14161B", -- rows, dropdown / tooltip popups
+			SurfaceContainerHighest = "1A1C24", -- input fields, keybind chips
+			SecondaryContainer = "272831", -- selection (option buttons)
+			OnSecondaryContainer = "FFFFFF",
+			OutlineVariant = "2D303A", -- outlines
+			OnSurface = "FFFFFF", -- text
+			OnSurfaceVariant = "BABABA", -- secondary text
+			Icon = "DFDFDF",
+			Error = "FF6669", -- red indicator
+			HUDBackground = "08080D", -- watermark
+		},
+		-- The accent (switches, slider, tab icon) is the theme color itself
+		-- rather than M3's lighter dark-mode tone, and the selected tab icon
+		-- and accent icons use it; all of them follow a new theme color.
+		Follow = { Primary = "Seed", IconSelected = "Primary", IconAccent = "Primary" },
+	},
 }
+
+-- Applies a preset from Theme.Presets by name. A seed-only preset changes
+-- the theme color and keeps custom colors; a full preset also sets its mode
+-- and colors. Colors a previously applied full preset set, and that haven't
+-- been changed since, are removed first, so switching presets doesn't leave
+-- the old look behind. Returns false for an unknown name.
+function Theme:ApplyPreset(name: string): boolean
+	local preset = nil
+	for _, candidate in Theme.Presets do
+		if candidate.Name == name then
+			preset = candidate
+		end
+	end
+	if not preset then
+		return false
+	end
+
+	local overrides = table.clone(self._overrides)
+	for role, hex in self._presetOverrides or {} do
+		local color = overrides[role]
+		if color and color:ToHex() == string.lower(hex) then
+			overrides[role] = nil
+		end
+	end
+	self._presetOverrides = nil
+	if preset.Overrides then
+		for role, hex in preset.Overrides do
+			overrides[role] = Color3.fromHex(hex)
+		end
+		self._presetOverrides = preset.Overrides
+	end
+	self._follow = table.clone(preset.Follow or {})
+
+	self.Seed = Color3.fromHex(preset.Seed)
+	self._palettes = buildPalettes(self.Seed)
+	if preset.Mode then
+		self.Mode = preset.Mode
+	end
+	self._overrides = overrides
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+	return true
+end
 
 -- Surface tint overlay used to fake elevation (M3 uses a primary-tinted
 -- overlay on top of Surface instead of a pure drop shadow to convey elevation).

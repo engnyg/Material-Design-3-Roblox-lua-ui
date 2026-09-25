@@ -960,6 +960,70 @@ check(bgWin:LoadConfig("bg"), "loading the background config failed")
 check(bgImage.Visible and bgWin:GetBackground() == logoUrl and near(bgImage.ImageTransparency, 0.7), "the background was not restored from the config")
 bgWin:Destroy()
 
+-- Theme presets: NeverLose (a full preset: mode + pinned colors)
+local rgb = Color3.fromRGB
+local nlPreset = nil
+for _, preset in MD3.Theme.Presets do
+	if preset.Name == "NeverLose" then
+		nlPreset = preset
+	end
+end
+check(nlPreset ~= nil and nlPreset.Seed == "4E7FFC", "the NeverLose preset is missing")
+local pt = MD3.Theme.new(nil, "Light")
+check(pt:ApplyPreset("NeverLose"), "ApplyPreset(NeverLose) returned false")
+check(pt.Mode == "Dark" and pt.Seed:ToHex() == "4e7ffc", "NeverLose should be dark with a #4E7FFC seed")
+check(pt.Colors.Primary == rgb(78, 127, 252) and pt.Colors.Surface == rgb(8, 8, 13) and pt.Colors.SurfaceContainerHigh == rgb(20, 22, 27), "NeverLose accent / surfaces")
+check(pt.Colors.OnSurface == rgb(255, 255, 255) and pt.Colors.OnSurfaceVariant == rgb(186, 186, 186) and pt.Colors.OutlineVariant == rgb(45, 48, 58), "NeverLose text / outline")
+check(pt.Colors.HUDBackground == rgb(8, 8, 13) and pt.Colors.IconSelected == rgb(78, 127, 252) and pt.Colors.Error == rgb(255, 102, 105), "NeverLose HUD / selected icon / error")
+
+-- Changing the theme color replaces the pinned accent, keeps the surfaces
+pt:SetSeedColor(Color3.fromHex("B3261E"))
+check(pt.Colors.Primary == Color3.fromHex("B3261E"), "NeverLose's accent should be exactly the new theme color")
+check(pt.Colors.IconSelected == pt.Colors.Primary and pt.Colors.IconAccent == pt.Colors.Primary, "NeverLose's selected / accent icons should follow the new accent")
+check(pt.Colors.OnPrimary == rgb(255, 255, 255), "NeverLose keeps white on the accent")
+check(pt.Colors.Surface == rgb(8, 8, 13), "a new theme color should keep NeverLose's surfaces")
+
+-- Switching presets drops NeverLose's colors but keeps the user's own
+pt:ApplyPreset("NeverLose")
+local gold = rgb(255, 200, 0)
+pt:SetOverride("Icon", gold) -- replaces one of NeverLose's colors
+pt:SetOverride("Tertiary", gold) -- a role NeverLose doesn't touch
+pt:ApplyPreset("Green")
+local greenDark = MD3.Theme.new(Color3.fromHex("006E1C"), "Dark")
+check(pt.Colors.Surface == greenDark.Colors.Surface and pt.Colors.Primary == greenDark.Colors.Primary, "switching away from NeverLose left its colors behind")
+check(pt.Colors.Icon == gold and pt.Colors.Tertiary == gold, "switching presets dropped the user's own colors")
+check(not pt:ApplyPreset("Nope"), "an unknown preset should return false")
+
+local nlWin = MD3.CreateWindow({ Title = "NL Hub", Parent = host, Preset = "NeverLose" })
+check(nlWin.Theme.Colors.Surface == rgb(8, 8, 13) and nlWin.Instance.BackgroundColor3 == rgb(8, 8, 13), "CreateWindow Preset was not applied")
+nlWin:Destroy()
+local nlRed = MD3.CreateWindow({ Title = "NL Red", Parent = host, Preset = "NeverLose", Mode = "Light", ThemeColor = Color3.fromHex("B3261E") })
+check(nlRed.Theme.Mode == "Light" and nlRed.Theme.Seed:ToHex() == "b3261e", "explicit Mode / ThemeColor should win over the preset")
+check(nlRed.Theme.Colors.Primary == Color3.fromHex("B3261E") and nlRed.Theme.Colors.Surface == rgb(8, 8, 13), "ThemeColor with a preset: new accent, preset surfaces")
+nlRed:Destroy()
+
+local presetWin = MD3.CreateWindow({ Title = "Preset Hub", Parent = host })
+presetWin:AddSettingsTab()
+local presetDropdown = findElement(presetWin, "Preset")
+check(presetDropdown ~= nil, "the theme editor should have the Preset dropdown")
+presetDropdown:Set("NeverLose")
+check(presetWin.Theme.Colors.Surface == rgb(8, 8, 13) and presetWin.Instance.BackgroundColor3 == rgb(8, 8, 13), "the Preset dropdown did not apply NeverLose")
+-- The icon link survives a config round trip and a theme export / import
+local savedTheme = presetWin.Flags.MD3_ThemeOverrides:Get()
+check(savedTheme.Follow.IconSelected == "Primary", "the theme config should keep NeverLose's icon link")
+local reloaded = MD3.Theme.new()
+reloaded:SetOverrides(savedTheme.Colors, savedTheme.Transparency, savedTheme.Follow)
+reloaded:SetSeedColor(Color3.fromHex("006E1C"))
+check(reloaded.Colors.Primary == Color3.fromHex("006E1C") and reloaded.Colors.IconSelected == reloaded.Colors.Primary,
+	"after a config reload a new theme color should still become NeverLose's accent")
+check(reloaded.Colors.Surface == rgb(8, 8, 13), "after a config reload NeverLose's surfaces should stay")
+local imported = MD3.Theme.new()
+imported:Import(presetWin.Theme:Export())
+check(imported.Colors.IconSelected == rgb(78, 127, 252) and imported.Colors.Surface == rgb(8, 8, 13), "a NeverLose theme export / import lost colors")
+presetDropdown:Set("Blue")
+check(presetWin.Theme.Colors.Surface ~= rgb(8, 8, 13), "switching the dropdown away from NeverLose kept its colors")
+presetWin:Destroy()
+
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.
 local layouts, unsorted = 0, 0
