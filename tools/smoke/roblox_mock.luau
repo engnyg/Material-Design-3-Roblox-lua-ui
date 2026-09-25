@@ -350,6 +350,14 @@ local services = {}
 services.TweenService = {
 	Create = function(_, inst, _info, goals)
 		local tween = { Completed = makeSignal() }
+		-- Like Roblox, Cancel stops the tween where it is and fires Completed.
+		function tween:Cancel()
+			local index = table.find(pendingTweens, tween)
+			if index then
+				table.remove(pendingTweens, index)
+			end
+			tween.Completed:Fire(Enum.PlaybackState.Cancelled)
+		end
 		function tween:Play()
 			for k, v in goals do
 				inst[k] = v

@@ -522,6 +522,67 @@ local plainPicker = other:AddColorPicker({ Title = "No alpha", Default = red, Ca
 plainPicker:Set(green)
 check(loadedCallbacks.noalpha.n == 1, "a picker without Transparency should keep the one-argument callback")
 
+do -- Opening the color picker: animated, header-only press feedback
+	local rowFrame = plainPicker.Instance
+	local panel = rowFrame.Body.Extra
+	local touch = rowFrame:FindFirstChild("Touch")
+	local mouse1 = Enum.UserInputType.MouseButton1
+	local function tap(y)
+		local input = { UserInputType = mouse1, Position = Vector3.new(10, y, 0) }
+		rowFrame.InputBegan:Fire(input)
+		rowFrame.InputEnded:Fire(input)
+		rowFrame.Activated:Fire()
+	end
+	local function ripples()
+		local n = 0
+		for _, child in touch:GetChildren() do
+			if child.Name == "Ripple" then
+				n += 1
+			end
+		end
+		return n
+	end
+	flushTweens()
+	check(touch ~= nil and touch.ClipsDescendants and touch.Size.Y.Offset == 50, "press feedback should cover only the header")
+	check(touch:FindFirstChild("StateLayer") ~= nil and rowFrame:FindFirstChild("StateLayer") == nil, "the state layer should live on the header")
+	check(not plainPicker.Expanded and not panel.Visible and panel.Size.Y.Offset == 0, "the picker should start closed")
+
+	tap(10) -- on the header
+	check(plainPicker.Expanded and panel.Visible and panel.Size.Y.Offset == 168, "a header tap should open the picker to its full height")
+	check(panel.ClipsDescendants, "the panel should clip while it grows")
+	check(ripples() == 1, "a header tap should ripple on the header")
+	flushTweens()
+	check(not panel.ClipsDescendants and panel.Visible, "once open the panel should stop clipping (cursors can poke out)")
+
+	local ripplesBefore = ripples() -- the mock never runs the ripple's fade-out delay
+	tap(100) -- inside the open picker, below the header
+	check(plainPicker.Expanded, "a tap inside the open picker should not close it")
+	check(ripples() == ripplesBefore, "no ripple over the open picker")
+
+	tap(10)
+	check(not plainPicker.Expanded and panel.Size.Y.Offset == 0 and panel.Visible, "a header tap should start closing it")
+	flushTweens()
+	check(not panel.Visible, "the panel should hide once closed")
+
+	plainPicker:SetExpanded(true)
+	plainPicker:SetExpanded(false)
+	plainPicker:SetExpanded(true) -- re-opened mid-animation
+	flushTweens()
+	check(plainPicker.Expanded and panel.Visible and panel.Size.Y.Offset == 168 and not panel.ClipsDescendants, "re-opening mid-animation should end open")
+	plainPicker:SetExpanded(false)
+	flushTweens()
+
+	-- Touch-only devices: no hover tint (MouseLeave often never comes)
+	uis.TouchEnabled, uis.MouseEnabled = true, false
+	local touchToggle = other:AddToggle({ Title = "Touch hover" })
+	touchToggle.Instance.MouseEnter:Fire()
+	check(touchToggle.Instance.StateLayer.BackgroundTransparency == 1, "hover should be off on touch-only devices")
+	uis.TouchEnabled, uis.MouseEnabled = false, nil
+	local mouseToggle = other:AddToggle({ Title = "Mouse hover" })
+	mouseToggle.Instance.MouseEnter:Fire()
+	check(math.abs(mouseToggle.Instance.StateLayer.BackgroundTransparency - 0.92) < 1e-6, "hover should still work with a mouse")
+end
+
 -- Theme role transparency reaches the window
 wt:SetOverride("Surface", Color3.fromHex("#101018"), 0.4)
 check(Window.Instance.BackgroundTransparency == 0.4, "Surface transparency not applied to the window background")
