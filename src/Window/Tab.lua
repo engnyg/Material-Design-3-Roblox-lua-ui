@@ -187,21 +187,27 @@ function Tab.new(window, props)
 end
 
 function Tab:_paint()
-	local c = self._window.Theme.Colors
+	local theme = self._window.Theme
+	local c = theme.Colors
+	local function alpha(role)
+		return theme:GetTransparency(role) or 0
+	end
 	local active = self._window.SelectedTab == self
 	self._button.BackgroundColor3 = c.SecondaryContainer
 	TweenService:Create(self._button, Motion.Standard(Motion.Duration.Short3), {
-		BackgroundTransparency = active and 0 or 1,
+		BackgroundTransparency = if active then alpha("SecondaryContainer") else 1,
 	}):Play()
-	local content = active and c.OnSecondaryContainer or c.OnSurfaceVariant
-	self._label.TextColor3 = content
+	local textRole = if active then "OnSecondaryContainer" else "OnSurfaceVariant"
+	self._label.TextColor3 = c[textRole]
+	self._label.TextTransparency = alpha(textRole)
 	local iconColor = self._iconColor
 	if typeof(iconColor) == "Color3" then
 		Base.SetIconColor(self._icon, iconColor)
 	elseif type(iconColor) == "string" and c[iconColor] then
-		Base.SetIconColor(self._icon, c[iconColor])
+		Base.SetIconColor(self._icon, c[iconColor], alpha(iconColor))
 	else
-		Base.SetIconColor(self._icon, active and c.IconSelected or c.Icon)
+		local iconRole = if active then "IconSelected" else "Icon"
+		Base.SetIconColor(self._icon, c[iconRole], alpha(iconRole))
 	end
 	self._stateLayer:SetColor(c.OnSurface)
 end

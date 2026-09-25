@@ -48,6 +48,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 ### 視窗功能
 
 - **可拖曳**的 M3 視窗：頂部 App Bar（標題／副標題／縮小／關閉）、左側 Navigation Drawer 分頁、右側可捲動內容區。
+- **可調大小**：拖右下角的把手縮放視窗（最小 420×280），放開後自動記住，下次執行會還原（存在 `ConfigFolder/window.json`；`RememberSize = false` 可關閉）。程式裡用 `Window:SetSize(w, h)`／`GetSize()`／`ResetSize()`；設定頁也有「Reset window size」。
 - **切換鍵**（預設 RightShift）隱藏／顯示；關閉鈕會跳出 M3 對話框讓你選「隱藏」或「卸載（Unload）」。
 - **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
 - **防偵測／相容性**：ScreenGui 優先放進 `gethui()`，其次 `CoreGui`，最後才是 `PlayerGui`；有 `syn.protect_gui` / `protectgui` 會自動套用；ScreenGui 名稱隨機。
@@ -70,7 +71,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 | `AddInput` | `Placeholder`、`Default`、`Numeric`、`Finished`、`ClearOnSubmit` | `string` |
 | `AddDropdown` | `Options`、`Default`、`Multi`、`Searchable` | 單選 `string`／多選 `{string}`；`:SetOptions(list)` 更新選項 |
 | `AddKeybind` | `Default`、`Mode`（`Press`/`Toggle`/`Hold`）、`Callback`、`ChangedCallback` | `Enum.KeyCode`（點一下再按鍵；Esc 取消、Backspace 清除） |
-| `AddColorPicker` | `Default`、`Callback` | `Color3`（SV 方塊 + 色相條 + HEX 輸入） |
+| `AddColorPicker` | `Default`、`Transparency`（給了就多一條透明度條）、`Callback` | `Color3`（SV 方塊 + 色相條 + HEX 輸入）；有透明度時 Callback 收到 `(color, transparency)`、`.Transparency` 為目前值、`:SetTransparency(t)` |
 | `AddLabel` | 文字或 `{ Text, Color }` | `:Set(text)` |
 | `AddParagraph` | `Title`、`Content` | `:Set({ Title, Content })` |
 | `AddDivider` | — | — |
@@ -121,7 +122,9 @@ MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭
 - **Reset custom colors**：清掉自訂顏色，回到由主題色自動生成的配色。
 - **Copy theme**／**Import theme**：把主題（主題色、深淺模式、自訂顏色）複製成 JSON 分享，或貼上 JSON 匯入。
 
-自訂顏色是疊在主題色生成的配色之上的「覆寫」：換主題色或切換深淺色時，沒改過的顏色會跟著變，改過的保持不變；改了某個底色（例如 Primary、Background）而沒另外指定它上面的文字色時，文字色會自動選黑或白以保持可讀。自訂顏色會存進設定檔（Flag `MD3_ThemeOverrides`）。
+**每個選色器都有透明度條**（Opacity），包括 Appearance 區塊的 Icon color／Text color：把 Background、Content panel、Rows 調成半透明就能透過視窗看到遊戲畫面；文字、圖標也能調透明度（說明文字、圖標會跟著文字的透明度）。透明度套用在視窗本身（背景、各列、文字、圖標、分頁、下拉選單）；開關、滑桿、按鈕、對話框等元件內部維持不透明。
+
+自訂顏色是疊在主題色生成的配色之上的「覆寫」：換主題色或切換深淺色時，沒改過的顏色會跟著變，改過的保持不變；改了某個底色（例如 Primary、Background）而沒另外指定它上面的文字色時，文字色會自動選黑或白以保持可讀。自訂顏色和透明度會存進設定檔（Flag `MD3_ThemeOverrides`），`Copy theme` 匯出的 JSON 也包含透明度。
 
 程式裡也能直接用：
 
@@ -130,6 +133,8 @@ local theme = Window.Theme
 theme:SetOverride("Primary", Color3.fromRGB(255, 80, 80))  -- 固定某個顏色角色
 theme:SetOverride("Icon", Color3.fromRGB(255, 200, 0))     -- 所有一般圖標改成黃色
 theme:SetOverride("Primary", nil)                          -- 還原成自動生成
+theme:SetOverride("Surface", Color3.fromRGB(16, 16, 24), 0.3) -- 顏色 + 透明度（0 = 不透明、1 = 全透明）
+theme:SetTransparency("SurfaceContainerHigh", 0.5)          -- 只改透明度
 theme:ClearOverrides()
 local data = theme:Export()   -- { Seed = "6750a4", Mode = "Dark", Overrides = { Icon = "ffc800" } }
 theme:Import(data)

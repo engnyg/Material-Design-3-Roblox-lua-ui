@@ -19,7 +19,6 @@ local Create = require(Root.Util.Create)
 local Typography = require(Root.Core.Typography)
 local Shape = require(Root.Core.Shape)
 local Motion = require(Root.Core.Motion)
-local Icons = require(Root.Core.Icons)
 
 local ITEM_HEIGHT = 32
 local MAX_LIST_HEIGHT = 6 * (ITEM_HEIGHT + 2)
@@ -144,16 +143,25 @@ return function(container, props)
 
 	local function paint()
 		local c = theme.Colors
+		local function alpha(role)
+			return theme:GetTransparency(role) or 0
+		end
 		fieldLabel.Text = displayText()
-		fieldLabel.TextColor3 = (multi and #element.Value > 0 or not multi and element.Value ~= nil) and c.OnSurface
-			or c.OnSurfaceVariant
+		local hasValue = if multi then #element.Value > 0 else element.Value ~= nil
+		local fieldRole = if hasValue then "OnSurface" else "OnSurfaceVariant"
+		fieldLabel.TextColor3 = c[fieldRole]
+		fieldLabel.TextTransparency = alpha(fieldRole)
 		for option, item in items do
 			local selected = isSelected(option)
+			local labelRole = if selected then "OnSecondaryContainer" else "OnSurface"
 			item.Button.BackgroundColor3 = c.SecondaryContainer
-			item.Button.BackgroundTransparency = selected and 0 or 1
-			item.Label.TextColor3 = selected and c.OnSecondaryContainer or c.OnSurface
+			item.Button.BackgroundTransparency = if selected then alpha("SecondaryContainer") else 1
+			item.Label.TextColor3 = c[labelRole]
+			item.Label.TextTransparency = alpha(labelRole)
+			-- Hidden through transparency, not Visible: Icons manages Visible
+			-- and would show the check again once the icon images load.
 			item.Check.TextColor3 = c.OnSecondaryContainer
-			item.Check.Visible = selected and Icons.CanRender("check")
+			item.Check.TextTransparency = if selected then alpha("OnSecondaryContainer") else 1
 		end
 	end
 

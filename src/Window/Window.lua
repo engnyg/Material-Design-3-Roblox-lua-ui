@@ -10,7 +10,8 @@
 		TextColor = nil,                   -- color of all text (Color3); secondary text follows it
 		AppIconColor = nil,                -- just the title-bar icon: theme role or Color3
 		Logo = "https://.../logo.png",     -- colored image shown instead of Icon (not tinted)
-		Size = UDim2.fromOffset(600, 420),
+		Size = UDim2.fromOffset(600, 420),  -- starting size; drag the bottom-right corner to resize
+		RememberSize = true,               -- restore the size the user dragged to last time
 		Mode = "Dark",                     -- "Light" | "Dark"
 		Seed = nil,                        -- same as ThemeColor
 		ToggleKey = Enum.KeyCode.RightShift,
@@ -52,6 +53,7 @@ local Base = require(script.Parent.Elements.Base)
 local TOP_BAR_HEIGHT = 56
 local NAV_WIDTH = 168
 local DEFAULT_SIZE = UDim2.fromOffset(600, 420)
+local MIN_SIZE = Vector2.new(420, 280) -- smallest size the resize handle allows
 
 local Window = {}
 Window.__index = Window
@@ -135,6 +137,8 @@ function Window.new(props)
 	self._maid = Maid.new()
 	self._toggleKey = toKeyCode(props.ToggleKey or props.Keybind) or Enum.KeyCode.RightShift
 	self._size = props.Size or DEFAULT_SIZE
+	self._defaultSize = self._size
+	self._rememberSize = props.RememberSize ~= false
 
 	-- Replace the window a previous run of the same script left behind.
 	local registry = Env.Registry()
@@ -147,6 +151,14 @@ function Window.new(props)
 	registry.Windows[self._registryKey] = self
 
 	self._configFolder = props.ConfigFolder or props.Folder or `MD3/{sanitize(self.Title)}`
+
+	-- The size the user resized the window to last time (window.json).
+	if self._rememberSize then
+		local saved = self:_readSavedSize()
+		if saved then
+			self._size = UDim2.fromOffset(saved.X, saved.Y)
+		end
+	end
 
 	-- Material icons as a sprite-sheet image, loaded the way NeverLose loads
 	-- its images (HttpGet -> writefile -> getcustomasset). Runs in the
@@ -381,6 +393,76 @@ function Window.new(props)
 	themer:Bind(pages, { BackgroundColor3 = "SurfaceContainerLow" })
 	self._pages = pages
 
+	--== Resize handle (bottom-right corner) ==--
+	local grip = Create("TextButton") {
+		Name = "Resize",
+		AutoButtonColor = false,
+		Text = "",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.fromScale(1, 1),
+		Size = UDim2.fromOffset(28, 28),
+		ZIndex = 20,
+		Parent = main,
+	}
+	-- Two diagonal strokes, the usual "drag to resize" grip: a long one and
+	-- a short one nearer the corner.
+	for _, spec in { { length = 12, inset = 11 }, { length = 6, inset = 7 } } do
+		local stroke = Create("Frame") {
+			Name = "Stroke",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(1, -spec.inset, 1, -spec.inset),
+			Size = UDim2.fromOffset(spec.length, 2),
+			Rotation = -45,
+			BorderSizePixel = 0,
+			ZIndex = 21,
+			Parent = grip,
+			[1] = Create("UICorner") { CornerRadius = UDim.new(1, 0) },
+		}
+		themer:Bind(stroke, { BackgroundColor3 = "Outline" })
+	end
+	self._grip = grip
+
+	do
+		local resizing, startInput, startSize, startPos = false, nil, nil, nil
+		self._maid:GiveTask(grip.InputBegan:Connect(function(input)
+			if isPress(input) and not self.Minimized then
+				resizing = true
+				startInput = input.Position
+				startSize = Vector2.new(self._size.X.Offset, self._size.Y.Offset)
+				startPos = main.Position
+			end
+		end))
+		self._maid:GiveTask(UserInputService.InputChanged:Connect(function(input)
+			if not resizing or not isMove(input) then
+				return
+			end
+			-- Screen pixels -> unscaled window pixels (UIScale shrinks it on phones).
+			local scale = uiScale.Scale
+			local delta = (input.Position - startInput) / scale
+			local camera = workspace.CurrentCamera
+			local viewport = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
+			local width = math.clamp(startSize.X + delta.X, MIN_SIZE.X, math.max(MIN_SIZE.X, viewport.X / scale - 24))
+			local height = math.clamp(startSize.Y + delta.Y, MIN_SIZE.Y, math.max(MIN_SIZE.Y, viewport.Y / scale - 24))
+			self._size = UDim2.fromOffset(math.round(width), math.round(height))
+			main.Size = self._size
+			-- The window is centered on its Position; move it by half the growth
+			-- so the top-left corner stays put and the grip follows the pointer.
+			main.Position = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + (width - startSize.X) * scale / 2,
+				startPos.Y.Scale,
+				startPos.Y.Offset + (height - startSize.Y) * scale / 2
+			)
+		end))
+		self._maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+			if resizing and isPress(input) then
+				resizing = false
+				self:_saveSize()
+			end
+		end))
+	end
+
 	--== Notifications ==--
 	self._notifier = Notifier.new(gui, themer)
 
@@ -554,6 +636,7 @@ function Window:Minimize(minimized: boolean?)
 	self.Minimized = minimized
 	local main = self.Instance
 	local ti = Motion.Emphasized(Motion.Duration.Medium2)
+	self._grip.Visible = not minimized
 	if minimized then
 		local tween = TweenService:Create(main, ti, {
 			Size = UDim2.new(self._size.X.Scale, self._size.X.Offset, 0, TOP_BAR_HEIGHT),
@@ -579,6 +662,55 @@ function Window:SetIconStyle(style: string): (string?, string?)
 		return IconImages.CurrentStyle, err
 	end
 	return IconImages.CurrentStyle
+end
+
+-- Resizes the window (unscaled pixels; the resize handle does the same).
+-- Accepts a UDim2 offset size or width, height numbers.
+function Window:SetSize(width, height: number?)
+	if type(width) ~= "number" then -- a UDim2
+		width, height = width.X.Offset, width.Y.Offset
+	end
+	self._size = UDim2.fromOffset(math.max(width, MIN_SIZE.X), math.max(height, MIN_SIZE.Y))
+	if not self.Minimized then
+		self.Instance.Size = self._size
+	end
+	self:_saveSize()
+end
+
+function Window:GetSize(): UDim2
+	return self._size
+end
+
+-- Back to the size given in CreateWindow (or the default).
+function Window:ResetSize()
+	self:SetSize(self._defaultSize)
+end
+
+function Window:_sizePath(): string
+	return `{self._configFolder}/window.json`
+end
+
+function Window:_saveSize()
+	if not (self._rememberSize and Env.CanUseFiles) then
+		return
+	end
+	Env.MakeFolder(self._configFolder)
+	Env.WriteFile(self:_sizePath(), HttpService:JSONEncode({
+		Width = self._size.X.Offset,
+		Height = self._size.Y.Offset,
+	}))
+end
+
+function Window:_readSavedSize(): Vector2?
+	local json = Env.ReadFile(self:_sizePath())
+	if not json then
+		return nil
+	end
+	local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
+	if ok and type(data) == "table" and type(data.Width) == "number" and type(data.Height) == "number" then
+		return Vector2.new(math.max(data.Width, MIN_SIZE.X), math.max(data.Height, MIN_SIZE.Y))
+	end
+	return nil
 end
 
 function Window:SetToggleKey(key)
@@ -749,8 +881,8 @@ function Window:AddSettingsTab(props)
 	-- Icon and text color: overrides (saved with the theme editor's
 	-- MD3_ThemeOverrides flag), shown as the current color when not custom.
 	local quick = {
-		{ Role = "Icon", Title = "Icon color", Auto = "Follows the text color", Set = "SetIconColor" },
-		{ Role = "OnSurface", Title = "Text color", Auto = "Generated from the theme color", Set = "SetTextColor" },
+		{ Role = "Icon", Title = "Icon color", Auto = "Follows the text color" },
+		{ Role = "OnSurface", Title = "Text color", Auto = "Generated from the theme color" },
 	}
 	local quickPickers = {}
 	local editingQuick = nil
@@ -758,9 +890,10 @@ function Window:AddSettingsTab(props)
 		quickPickers[entry.Role] = appearance:AddColorPicker({
 			Title = entry.Title,
 			Default = self.Theme.Colors[entry.Role],
-			Callback = function(color)
+			Transparency = self.Theme:GetTransparency(entry.Role) or 0,
+			Callback = function(color, transparency)
 				editingQuick = entry.Role
-				self.Theme[entry.Set](self.Theme, color)
+				self.Theme:SetOverride(entry.Role, color, transparency)
 				editingQuick = nil
 			end,
 		})
@@ -769,17 +902,20 @@ function Window:AddSettingsTab(props)
 		Title = "Reset icon & text colors",
 		Icon = "refresh",
 		Callback = function()
-			local overrides = self.Theme:GetOverrides()
-			overrides.Icon, overrides.OnSurface = nil, nil
-			self.Theme:SetOverrides(overrides)
+			local overrides, transparency = self.Theme:GetOverrides(), self.Theme:GetTransparencies()
+			for _, entry in quick do
+				overrides[entry.Role], transparency[entry.Role] = nil, nil
+			end
+			self.Theme:SetOverrides(overrides, transparency)
 		end,
 	})
 	local function refreshQuick()
 		for _, entry in quick do
 			local picker = quickPickers[entry.Role]
 			local color = self.Theme.Colors[entry.Role]
-			if editingQuick ~= entry.Role and picker.Value ~= color then
-				picker:Set(color, true)
+			local transparency = self.Theme:GetTransparency(entry.Role) or 0
+			if editingQuick ~= entry.Role and (picker.Value ~= color or picker.Transparency ~= transparency) then
+				picker:Set({ Color = color, Transparency = transparency }, true)
 			end
 			picker:SetDescription(if self.Theme:IsOverridden(entry.Role) then "Custom" else entry.Auto)
 		end
@@ -831,6 +967,14 @@ function Window:AddSettingsTab(props)
 		Flag = "MD3_ToggleKey",
 		ChangedCallback = function(key)
 			self:SetToggleKey(key)
+		end,
+	})
+	interface:AddButton({
+		Title = "Reset window size",
+		Description = "Drag the bottom-right corner to resize",
+		Icon = "fullscreen_exit",
+		Callback = function()
+			self:ResetSize()
 		end,
 	})
 	interface:AddButton({
@@ -951,9 +1095,10 @@ function Window:AddThemeEditor(container)
 			Title = entry.Name,
 			Description = role,
 			Default = theme.Colors[role],
-			Callback = function(color)
+			Transparency = theme:GetTransparency(role) or 0,
+			Callback = function(color, transparency)
 				editing = role
-				theme:SetOverride(role, color)
+				theme:SetOverride(role, color, transparency)
 				editing = nil
 			end,
 		})
@@ -962,8 +1107,9 @@ function Window:AddThemeEditor(container)
 	local function refresh()
 		for role, picker in pickers do
 			local color = theme.Colors[role]
-			if role ~= editing and picker.Value ~= color then
-				picker:Set(color, true)
+			local transparency = theme:GetTransparency(role) or 0
+			if role ~= editing and (picker.Value ~= color or picker.Transparency ~= transparency) then
+				picker:Set({ Color = color, Transparency = transparency }, true)
 			end
 			picker:SetDescription(if theme:IsOverridden(role) then `{role} · custom` else role)
 		end
@@ -1013,17 +1159,27 @@ function Window:AddThemeEditor(container)
 
 	-- Overrides go into configs as one flag (saving every picker would pin
 	-- generated colors too and stop them following the accent color).
-	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = theme:GetOverrides() }
+	-- Value: { Colors = { [role] = Color3 }, Transparency = { [role] = number } }
+	local function current()
+		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies() }
+	end
+	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = current() }
 	function overridesFlag:Set(value)
-		theme:SetOverrides(if type(value) == "table" then value else {})
+		if type(value) ~= "table" then
+			theme:ClearOverrides()
+		elseif value.Colors or value.Transparency then
+			theme:SetOverrides(value.Colors or {}, value.Transparency or {})
+		else
+			theme:SetOverrides(value, {}) -- configs saved before transparency existed
+		end
 	end
 	function overridesFlag:Get()
-		return theme:GetOverrides()
+		return current()
 	end
 	function overridesFlag:Destroy() end
 	self.Flags.MD3_ThemeOverrides = overridesFlag
 	self._maid:GiveTask(theme.Changed:Connect(function()
-		overridesFlag.Value = theme:GetOverrides()
+		overridesFlag.Value = current()
 	end))
 
 	return section

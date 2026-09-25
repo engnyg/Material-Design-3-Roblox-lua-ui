@@ -411,7 +411,7 @@ check(main._icon.TextColor3 == green or Window.SelectedTab == main, "unselected 
 
 -- Editor pickers stay in sync and edit overrides
 local editorFlag = Window.Flags.MD3_ThemeOverrides
-check(editorFlag and editorFlag.Value.Primary == red and editorFlag.Value.Icon == green, "MD3_ThemeOverrides flag not tracking overrides")
+check(editorFlag and editorFlag.Value.Colors.Primary == red and editorFlag.Value.Colors.Icon == green, "MD3_ThemeOverrides flag not tracking overrides")
 check(Window:SaveConfig("themed"), "SaveConfig with overrides failed")
 wt:ClearOverrides()
 check(wt.Colors.Primary ~= red and not wt:IsOverridden("Icon"), "ClearOverrides failed")
@@ -485,6 +485,74 @@ check(iconPicker._desc.Text == "Custom" and textPicker._desc.Text == "Custom", "
 check(plainIcon.TextColor3 == green, "existing icons did not follow the icon color")
 findIn(appearance, "Reset icon & text colors"):Fire()
 check(not wt:IsOverridden("Icon") and not wt:IsOverridden("OnSurface") and textPicker.Value == wt.Colors.OnSurface, "reset icon & text colors failed")
+
+--== Transparency ==--
+-- Color picker opacity bar
+local alphaPicker = other:AddColorPicker({ Title = "Alpha", Default = red, Transparency = 0.25, Flag = "AlphaColor", Callback = record("alpha") })
+check(alphaPicker.Transparency == 0.25, "ColorPicker Transparency default")
+alphaPicker:SetTransparency(0.5)
+check(loadedCallbacks.alpha[1] == red and loadedCallbacks.alpha[2] == 0.5, "ColorPicker callback should get (color, transparency)")
+check(Window:SaveConfig("alpha"), "SaveConfig with transparency failed")
+alphaPicker:Set({ Color = green, Transparency = 0.1 })
+check(alphaPicker.Value == green and alphaPicker.Transparency == 0.1, "ColorPicker table Set")
+check(Window:LoadConfig("alpha") and alphaPicker.Value == red and alphaPicker.Transparency == 0.5, "config did not restore color + transparency")
+local plainPicker = other:AddColorPicker({ Title = "No alpha", Default = red, Callback = record("noalpha") })
+plainPicker:Set(green)
+check(loadedCallbacks.noalpha.n == 1, "a picker without Transparency should keep the one-argument callback")
+
+-- Theme role transparency reaches the window
+wt:SetOverride("Surface", Color3.fromHex("#101018"), 0.4)
+check(Window.Instance.BackgroundTransparency == 0.4, "Surface transparency not applied to the window background")
+wt:SetTransparency("Surface", nil)
+check(Window.Instance.BackgroundTransparency == 0, "removing the transparency should make the window opaque again")
+wt:SetTransparency("SurfaceContainerHigh", 0.5)
+check(plainButton.Instance.BackgroundTransparency == 0.5, "row transparency not applied")
+wt:SetOverride("OnSurface", white, 0.2)
+local rowTitle = plainButton.Instance:FindFirstChild("Body").Header:FindFirstChild("Text").Title
+check(rowTitle.TextTransparency == 0.2 and plainIcon.TextTransparency == 0.2, "text transparency should reach text and (cascading) icons")
+local plainSprite = plainIcon:FindFirstChild("MD3Icon")
+check(plainSprite == nil or plainSprite.ImageTransparency == 0.2, "icon image should follow the icon transparency")
+check(wt:Export().Transparency.OnSurface == 0.2, "Export should include transparency")
+wt:ClearOverrides()
+check(Window.Instance.BackgroundTransparency == 0 and plainButton.Instance.BackgroundTransparency == 0 and rowTitle.TextTransparency == 0, "ClearOverrides should restore opacity")
+
+-- Theme editor pickers edit transparency and it's saved
+surfacePicker:SetTransparency(0.3)
+check(wt:GetTransparency("Surface") == 0.3 and Window.Flags.MD3_ThemeOverrides.Value.Transparency.Surface == 0.3, "editor opacity did not set the role transparency")
+check(surfacePicker._desc.Text == "Surface · custom", "transparency-only change should mark the role custom")
+check(Window:SaveConfig("see-through"), "SaveConfig see-through failed")
+wt:ClearOverrides()
+check(Window:LoadConfig("see-through") and wt:GetTransparency("Surface") == 0.3 and Window.Instance.BackgroundTransparency == 0.3, "config did not restore theme transparency")
+wt:ClearOverrides()
+
+--== Resizing ==--
+local grip = Window._grip
+local startSize = Window:GetSize()
+local mouse = Enum.UserInputType.MouseButton1
+grip.InputBegan:Fire({ UserInputType = mouse, Position = Vector2.new(100, 100) })
+uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(200, 150) })
+uis.InputEnded:Fire({ UserInputType = mouse, Position = Vector2.new(200, 150) })
+local resized = Window:GetSize()
+local scale = Window._uiScale.Scale
+check(resized.X.Offset == math.round(startSize.X.Offset + 100 / scale) and resized.Y.Offset == math.round(startSize.Y.Offset + 50 / scale), `resize handle size wrong: {resized.X.Offset}x{resized.Y.Offset}`)
+check(Window.Instance.Size == resized or (Window.Instance.Size.X.Offset == resized.X.Offset and Window.Instance.Size.Y.Offset == resized.Y.Offset), "window not resized")
+check(files["SmokeHub/window.json"] ~= nil, "resized size not saved")
+grip.InputBegan:Fire({ UserInputType = mouse, Position = Vector2.new(500, 500) })
+uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector2.new(-2000, -2000) })
+uis.InputEnded:Fire({ UserInputType = mouse, Position = Vector2.new(-2000, -2000) })
+check(Window:GetSize().X.Offset == 420 and Window:GetSize().Y.Offset == 280, "resize should stop at the minimum size")
+Window:SetSize(640, 400)
+local restoredWindow = MD3.CreateWindow({ Title = "Restore", Parent = host, ConfigFolder = "SmokeHub" })
+check(restoredWindow:GetSize().X.Offset == 640 and restoredWindow:GetSize().Y.Offset == 400, "a new window did not restore the saved size")
+restoredWindow:ResetSize()
+check(restoredWindow:GetSize().X.Offset == 600 and restoredWindow:GetSize().Y.Offset == 420, "ResetSize should return to the default size")
+restoredWindow:Destroy()
+local fixedWindow = MD3.CreateWindow({ Title = "Fixed size", Parent = host, ConfigFolder = "SmokeHub", RememberSize = false, Size = UDim2.fromOffset(500, 350) })
+check(fixedWindow:GetSize().X.Offset == 500, "RememberSize = false should ignore the saved size")
+fixedWindow:Destroy()
+Window:Minimize(true)
+check(not grip.Visible, "resize handle should hide while minimized")
+Window:Minimize(false)
 
 local colored = MD3.CreateWindow({ Title = "Colors", Parent = host, ThemeColor = Color3.fromHex("#006E1C"), TextColor = white, IconColor = red })
 check(colored.Theme.Seed:ToHex() == "006e1c" and colored.Theme.Colors.OnSurface == white and colored.Theme.Colors.Icon == red, "CreateWindow ThemeColor/TextColor/IconColor")

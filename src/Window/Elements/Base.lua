@@ -150,12 +150,15 @@ function Base.CanShowIcon(icon): boolean
 	return Assets.IsImage(icon) or Icons.CanRender(icon) or (type(icon) == "string" and Icons.Codepoints[icon] ~= nil)
 end
 
--- Colors an icon made by Base.Glyph, whichever kind it is.
-function Base.SetIconColor(icon: GuiObject, color: Color3)
+-- Colors an icon made by Base.Glyph, whichever kind it is (optionally
+-- with a transparency, 0 = solid).
+function Base.SetIconColor(icon: GuiObject, color: Color3, transparency: number?)
 	if icon:IsA("ImageLabel") then
 		icon.ImageColor3 = color
+		icon.ImageTransparency = transparency or 0
 	else
 		icon.TextColor3 = color
+		icon.TextTransparency = transparency or 0
 	end
 end
 
