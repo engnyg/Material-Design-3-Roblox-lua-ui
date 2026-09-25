@@ -1,0 +1,819 @@
+--[[
+	Executor-style window built from MD3 components.
+
+	local Window = MD3:CreateWindow({
+		Title = "My Hub",
+		Subtitle = "v1.0",
+		Icon = "widgets",                  -- Material icon name (optional)
+		Size = UDim2.fromOffset(600, 420),
+		Mode = "Dark",                     -- "Light" | "Dark"
+		Seed = Color3.fromHex("#6750A4"),  -- accent / seed color
+		ToggleKey = Enum.KeyCode.RightShift,
+		ConfigFolder = "MyHub",            -- where configs are saved (executor workspace)
+		IconFont = true,                   -- download + load the Material Icons font
+		MobileButton = nil,                -- floating open/close button; default: on touch devices
+	})
+
+	local Main = Window:AddTab({ Title = "Main", Icon = "home" })
+	Main:AddToggle({ Title = "Auto farm", Flag = "AutoFarm", Callback = function(on) end })
+
+	Window:Notify({ Title = "Loaded", Content = "Press RightShift to hide", Icon = "check_circle" })
+]]
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local Root = script.Parent.Parent
+local Create = require(Root.Util.Create)
+local Maid = require(Root.Util.Maid)
+local Signal = require(Root.Util.Signal)
+local Theme = require(Root.Core.Theme)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+local Motion = require(Root.Core.Motion)
+local Elevation = require(Root.Core.Elevation)
+local StateLayer = require(Root.Core.StateLayer)
+local Icons = require(Root.Core.Icons)
+local Dialog = require(Root.Components.Dialog)
+local Env = require(Root.Executor.Env)
+local IconFont = require(Root.Executor.IconFont)
+local Themer = require(script.Parent.Themer)
+local Config = require(script.Parent.Config)
+local Notifier = require(script.Parent.Notifier)
+local Tab = require(script.Parent.Tab)
+local Base = require(script.Parent.Elements.Base)
+
+local TOP_BAR_HEIGHT = 56
+local NAV_WIDTH = 168
+local DEFAULT_SIZE = UDim2.fromOffset(600, 420)
+
+local Window = {}
+Window.__index = Window
+
+local function isPress(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function isMove(input)
+	return input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function toKeyCode(value)
+	if typeof(value) == "EnumItem" then
+		return value
+	elseif type(value) == "string" then
+		local ok, key = pcall(function()
+			return (Enum.KeyCode :: any)[value]
+		end)
+		return ok and key or nil
+	end
+	return nil
+end
+
+local function sanitize(name: string): string
+	return (tostring(name):gsub("[^%w%-_ ]", ""))
+end
+
+-- Makes `handle` drag `target` around (mouse and touch). `onClick` fires
+-- instead when the pointer barely moved, so a draggable button still clicks.
+local function makeDraggable(maid, handle: GuiObject, target: GuiObject, onClick)
+	local dragging, dragInput, startPos, startInput = false, nil, nil, nil
+	local moved = false
+
+	maid:GiveTask(handle.InputBegan:Connect(function(input)
+		if isPress(input) then
+			dragging, moved = true, false
+			dragInput = input
+			startInput = input.Position
+			startPos = target.Position
+		end
+	end))
+	maid:GiveTask(UserInputService.InputChanged:Connect(function(input)
+		if not dragging or not isMove(input) then
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.Touch and dragInput.UserInputType == Enum.UserInputType.Touch and input ~= dragInput then
+			return
+		end
+		local delta = input.Position - startInput
+		if delta.Magnitude > 4 then
+			moved = true
+		end
+		target.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end))
+	maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+		if dragging and isPress(input) then
+			dragging = false
+			if not moved and onClick then
+				onClick()
+			end
+		end
+	end))
+end
+
+function Window.new(props)
+	props = props or {}
+	local self = setmetatable({}, Window)
+	self.Title = props.Title or props.Name or "MD3"
+	self.Flags = {}
+	self.Tabs = {}
+	self.SelectedTab = nil
+	self.Visible = true
+	self.Minimized = false
+	self.OnUnload = Signal.new()
+	self._maid = Maid.new()
+	self._toggleKey = toKeyCode(props.ToggleKey or props.Keybind) or Enum.KeyCode.RightShift
+	self._size = props.Size or DEFAULT_SIZE
+
+	-- Replace the window a previous run of the same script left behind.
+	local registry = Env.Registry()
+	registry.Windows = registry.Windows or {}
+	self._registryKey = props.Id or self.Title
+	local previous = registry.Windows[self._registryKey]
+	if previous and previous ~= self and props.ReplaceExisting ~= false then
+		pcall(previous.Destroy, previous)
+	end
+	registry.Windows[self._registryKey] = self
+
+	self._configFolder = props.ConfigFolder or props.Folder or `MD3/{sanitize(self.Title)}`
+
+	if props.IconFont ~= false and not Icons.HasFont() then
+		pcall(IconFont.Load, "MD3")
+	end
+
+	self.Theme = props.Theme or Theme.new(props.Seed or props.Accent, props.Mode or "Dark")
+	self._themer = Themer.new(self.Theme)
+	local themer = self._themer
+
+	--== ScreenGui ==--
+	local gui = Create("ScreenGui") {
+		Name = props.GuiName or Env.RandomName(),
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = props.DisplayOrder or 100,
+	}
+	Env.ProtectGui(gui)
+	gui.Parent = props.Parent or Env.GetGuiParent()
+	self.Gui = gui
+
+	--== Main surface ==--
+	local main = Create("Frame") {
+		Name = "Main",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = self._size,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Active = true,
+		Parent = gui,
+	}
+	Shape.Corner(Shape.Large, main)
+	themer:Bind(main, { BackgroundColor3 = "Surface" })
+	themer:Bind(Create("UIStroke") {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Thickness = 1,
+		Parent = main,
+	}, { Color = "OutlineVariant" })
+	local uiScale = Create("UIScale") { Parent = main }
+	self.Instance = main
+	self._uiScale = uiScale
+
+	-- The shadow is a sibling of `main`, outside its UIScale, so it gets its
+	-- own UIScale kept in sync (otherwise it stays full size on phones).
+	local shadowScale = nil
+	local function applyShadow()
+		local holder = Elevation.Apply(main, 3, self.Theme.Colors.Shadow, Shape.Large)
+		shadowScale = holder and Create("UIScale") { Scale = uiScale.Scale, Parent = holder }
+	end
+	applyShadow()
+	self._maid:GiveTask(self.Theme.Changed:Connect(applyShadow))
+	self._maid:GiveTask(uiScale:GetPropertyChangedSignal("Scale"):Connect(function()
+		if shadowScale then
+			shadowScale.Scale = uiScale.Scale
+		end
+	end))
+
+	--== Top app bar ==--
+	local topBar = Create("Frame") {
+		Name = "TopBar",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, TOP_BAR_HEIGHT),
+		Active = true,
+		Parent = main,
+	}
+
+	local hasAppIcon = props.Icon ~= nil and Icons.CanRender(props.Icon)
+	if hasAppIcon then
+		local appIcon = Base.Glyph(themer, props.Icon, 24, "Primary", topBar)
+		appIcon.AnchorPoint = Vector2.new(0, 0.5)
+		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
+	end
+
+	local titleColumn = Create("Frame") {
+		Name = "Titles",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(hasAppIcon and 56 or 20, 0),
+		Size = UDim2.new(1, -(hasAppIcon and 56 or 20) - 96, 1, 0),
+		Parent = topBar,
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		},
+	}
+	local title = Create("TextLabel") {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 22),
+		Text = self.Title,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		LayoutOrder = 1,
+		Parent = titleColumn,
+	}
+	Typography.Apply(title, "TitleMedium")
+	themer:Bind(title, { TextColor3 = "OnSurface" })
+	self._titleLabel = title
+
+	local subtitle = Create("TextLabel") {
+		Name = "Subtitle",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 16),
+		Text = props.Subtitle or "",
+		Visible = (props.Subtitle or "") ~= "",
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		LayoutOrder = 2,
+		Parent = titleColumn,
+	}
+	Typography.Apply(subtitle, "BodySmall")
+	themer:Bind(subtitle, { TextColor3 = "OnSurfaceVariant" })
+	self._subtitleLabel = subtitle
+
+	local actions = Create("Frame") {
+		Name = "Actions",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -12, 0.5, 0),
+		Size = UDim2.fromOffset(80, 36),
+		Parent = topBar,
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+		},
+	}
+
+	local function barButton(iconName: string, order: number, onActivated)
+		local button = Create("TextButton") {
+			Name = iconName,
+			AutoButtonColor = false,
+			Text = "",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(36, 36),
+			LayoutOrder = order,
+			Parent = actions,
+		}
+		Shape.Corner(Shape.Full, button)
+		local glyph = Base.Glyph(themer, iconName, 20, "OnSurfaceVariant", button)
+		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+		glyph.Position = UDim2.fromScale(0.5, 0.5)
+		local layer = StateLayer.new(button, self.Theme.Colors.OnSurfaceVariant, Shape.Full)
+		themer:Bind(layer.Instance, { BackgroundColor3 = "OnSurfaceVariant" })
+		self._maid:GiveTask(button.MouseEnter:Connect(function()
+			layer:SetState("Hover", true)
+		end))
+		self._maid:GiveTask(button.MouseLeave:Connect(function()
+			layer:SetState("Hover", false)
+		end))
+		self._maid:GiveTask(button.Activated:Connect(onActivated))
+		return button
+	end
+
+	barButton("minimize", 1, function()
+		self:Minimize()
+	end)
+	barButton("close", 2, function()
+		self:_confirmClose()
+	end)
+
+	makeDraggable(self._maid, topBar, main)
+
+	--== Body: navigation drawer + content ==--
+	local body = Create("Frame") {
+		Name = "Body",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, TOP_BAR_HEIGHT),
+		Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT),
+		Parent = main,
+	}
+	self._body = body
+
+	local navList = Create("ScrollingFrame") {
+		Name = "Navigation",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, NAV_WIDTH, 1, 0),
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 0,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = body,
+		[1] = Create("UIPadding") {
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+			PaddingBottom = UDim.new(0, 12),
+		},
+		[2] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+		},
+	}
+	self._navList = navList
+
+	local pages = Create("Frame") {
+		Name = "Pages",
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(NAV_WIDTH, 0),
+		Size = UDim2.new(1, -NAV_WIDTH - 12, 1, -12),
+		ClipsDescendants = true,
+		Parent = body,
+	}
+	Shape.Corner(Shape.Large, pages)
+	themer:Bind(pages, { BackgroundColor3 = "SurfaceContainerLow" })
+	self._pages = pages
+
+	--== Notifications ==--
+	self._notifier = Notifier.new(gui, themer)
+
+	--== Floating open/close button (for touch devices without a keyboard) ==--
+	local showMobileButton = props.MobileButton
+	if showMobileButton == nil then
+		showMobileButton = UserInputService.TouchEnabled
+	end
+	if showMobileButton then
+		local mobileButton = Create("TextButton") {
+			Name = "Toggle",
+			AutoButtonColor = false,
+			Text = "",
+			Position = UDim2.new(0, 16, 0.3, 0),
+			Size = UDim2.fromOffset(48, 48),
+			BorderSizePixel = 0,
+			ZIndex = 60,
+			Parent = gui,
+		}
+		Shape.Corner(Shape.Large, mobileButton)
+		themer:Bind(mobileButton, { BackgroundColor3 = "PrimaryContainer" })
+		local glyph = Base.Glyph(themer, props.Icon and Icons.CanRender(props.Icon) and props.Icon or "menu", 24, "OnPrimaryContainer", mobileButton)
+		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+		glyph.Position = UDim2.fromScale(0.5, 0.5)
+		glyph.ZIndex = 61
+		makeDraggable(self._maid, mobileButton, mobileButton, function()
+			self:Toggle()
+		end)
+		self._mobileButton = mobileButton
+	end
+
+	--== Input: toggle key ==--
+	self._maid:GiveTask(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or UserInputService:GetFocusedTextBox() or self:_isCapturingKey(input) then
+			return
+		end
+		if self._toggleKey and input.KeyCode == self._toggleKey then
+			self:Toggle()
+		end
+	end))
+
+	--== Fit small screens (phones) ==--
+	local function rescale()
+		if props.Scale then
+			uiScale.Scale = props.Scale
+			return
+		end
+		local camera = workspace.CurrentCamera
+		local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+		local fit = math.min(1, (viewport.X - 24) / self._size.X.Offset, (viewport.Y - 24) / self._size.Y.Offset)
+		uiScale.Scale = math.max(fit, 0.4)
+	end
+	rescale()
+	local camera = workspace.CurrentCamera
+	if camera then
+		self._maid:GiveTask(camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale))
+	end
+
+	return self
+end
+
+--== Internal helpers ==--
+
+-- Runs a user callback without letting its errors break the UI.
+function Window:_call(fn, ...)
+	task.spawn(function(...)
+		local ok, err = xpcall(fn, debug.traceback, ...)
+		if not ok then
+			warn(`[MD3] {self.Title}: callback error: {err}`)
+		end
+	end, ...)
+end
+
+-- True while a Keybind element is waiting for (or has just consumed) this
+-- key press, so rebinding a key doesn't also trigger whatever it's bound to.
+-- Matched by key + time rather than InputObject identity, since Roblox may
+-- reuse InputObjects between presses.
+function Window:_isCapturingKey(input): boolean
+	if self._keybindListening then
+		return true
+	end
+	return input ~= nil
+		and self._capturedKey ~= nil
+		and input.KeyCode == self._capturedKey
+		and os.clock() - self._capturedAt < 0.1
+end
+
+function Window:_confirmClose()
+	self:Dialog({
+		Title = "Close window?",
+		Content = `Hide keeps the script running (press {self._toggleKey and self._toggleKey.Name or "the toggle key"} to reopen). Unload destroys the UI.`,
+		Buttons = {
+			{ Title = "Cancel", Variant = "Text" },
+			{
+				Title = "Unload",
+				Variant = "Text",
+				Callback = function()
+					self:Destroy()
+				end,
+			},
+			{
+				Title = "Hide",
+				Variant = "Filled",
+				Callback = function()
+					self:SetVisible(false)
+				end,
+			},
+		},
+	})
+end
+
+--== Tabs ==--
+
+function Window:AddTab(props)
+	local tab = Tab.new(self, props)
+	table.insert(self.Tabs, tab)
+	if not self.SelectedTab then
+		self:SelectTab(tab)
+	end
+	return tab
+end
+Window.CreateTab = Window.AddTab
+
+-- Accepts a Tab, its index, or its title.
+function Window:SelectTab(target)
+	local tab = target
+	if type(target) == "number" then
+		tab = self.Tabs[target]
+	elseif type(target) == "string" then
+		for _, candidate in self.Tabs do
+			if candidate.Title == target then
+				tab = candidate
+			end
+		end
+	end
+	if type(tab) ~= "table" or tab == self.SelectedTab then
+		return
+	end
+	local previous = self.SelectedTab
+	self.SelectedTab = tab
+	if previous then
+		previous:_setActive(false)
+	end
+	tab:_setActive(true)
+end
+
+--== Visibility ==--
+
+function Window:SetVisible(visible: boolean)
+	self.Visible = visible
+	local main = self.Instance
+	if visible then
+		main.Visible = true
+		local target = self._uiScale.Scale
+		self._uiScale.Scale = target * 0.94
+		TweenService:Create(self._uiScale, Motion.Emphasized(Motion.Duration.Medium2), { Scale = target }):Play()
+	else
+		main.Visible = false
+	end
+end
+
+function Window:Toggle()
+	self:SetVisible(not self.Visible)
+end
+
+function Window:Minimize(minimized: boolean?)
+	if minimized == nil then
+		minimized = not self.Minimized
+	end
+	self.Minimized = minimized
+	local main = self.Instance
+	local ti = Motion.Emphasized(Motion.Duration.Medium2)
+	if minimized then
+		local tween = TweenService:Create(main, ti, {
+			Size = UDim2.new(self._size.X.Scale, self._size.X.Offset, 0, TOP_BAR_HEIGHT),
+		})
+		tween:Play()
+		tween.Completed:Once(function()
+			if self.Minimized then
+				self._body.Visible = false
+			end
+		end)
+	else
+		self._body.Visible = true
+		TweenService:Create(main, ti, { Size = self._size }):Play()
+	end
+end
+
+function Window:SetToggleKey(key)
+	self._toggleKey = toKeyCode(key)
+end
+
+function Window:SetTitle(text: string)
+	self.Title = text
+	self._titleLabel.Text = text
+end
+
+function Window:SetSubtitle(text: string?)
+	self._subtitleLabel.Text = text or ""
+	self._subtitleLabel.Visible = (text or "") ~= ""
+end
+
+--== Feedback ==--
+
+-- Notify({ Title, Content, Icon = "info", Duration = 5 })
+function Window:Notify(props)
+	return self._notifier:Notify(props)
+end
+
+-- Dialog({ Title, Content, Buttons = { { Title, Variant = "Filled", Callback } } })
+function Window:Dialog(props)
+	local actions = {}
+	for _, button in props.Buttons or props.Actions or { { Title = "OK", Variant = "Filled" } } do
+		table.insert(actions, {
+			Text = button.Title or button.Text or "OK",
+			Variant = button.Variant or "Text",
+			OnActivated = button.Callback and function()
+				self:_call(button.Callback)
+			end,
+		})
+	end
+	local dialog = Dialog.new({
+		Parent = self.Instance,
+		Title = props.Title or "",
+		Text = props.Content or props.Text or "",
+		Actions = actions,
+		Theme = self.Theme,
+		ZIndex = 100,
+	})
+	Shape.Corner(Shape.Large, dialog.Instance)
+	dialog.Dismissed:Connect(function()
+		dialog:Destroy()
+	end)
+	dialog:Show()
+	return dialog
+end
+
+--== Configs ==--
+
+function Window:CanSaveConfigs(): boolean
+	return Env.CanUseFiles
+end
+
+function Window:_configPath(name: string): string
+	return `{self._configFolder}/configs/{sanitize(name)}.json`
+end
+
+function Window:SaveConfig(name: string?): (boolean, string?)
+	if not Env.CanUseFiles then
+		return false, "this executor has no file functions"
+	end
+	name = name or "default"
+	Env.MakeFolder(`{self._configFolder}/configs`)
+	local ok = Env.WriteFile(self:_configPath(name), Config.Encode(self.Flags))
+	return ok, (not ok) and "writefile failed" or nil
+end
+
+function Window:LoadConfig(name: string?): (boolean, string?)
+	name = name or "default"
+	local json = Env.ReadFile(self:_configPath(name))
+	if not json then
+		return false, `config "{name}" not found`
+	end
+	local data = Config.Decode(json)
+	if not data then
+		return false, `config "{name}" is corrupted`
+	end
+	for flag, value in data do
+		local element = self.Flags[flag]
+		if element then
+			local ok, err = pcall(element.Set, element, value)
+			if not ok then
+				warn(`[MD3] could not load flag {flag}: {err}`)
+			end
+		end
+	end
+	return true
+end
+
+function Window:DeleteConfig(name: string): boolean
+	return Env.DeleteFile(self:_configPath(name))
+end
+
+function Window:ListConfigs(): { string }
+	local names = {}
+	for _, path in Env.ListFiles(`{self._configFolder}/configs`) do
+		local name = tostring(path):match("([^/\\]+)%.json$")
+		if name then
+			table.insert(names, name)
+		end
+	end
+	table.sort(names)
+	return names
+end
+
+function Window:SetAutoLoad(name: string?)
+	local path = `{self._configFolder}/autoload.txt`
+	if name then
+		Env.MakeFolder(self._configFolder)
+		Env.WriteFile(path, sanitize(name))
+	else
+		Env.DeleteFile(path)
+	end
+end
+
+function Window:GetAutoLoad(): string?
+	local name = Env.ReadFile(`{self._configFolder}/autoload.txt`)
+	return name ~= "" and name or nil
+end
+
+-- Call once at the end of your script, after every flagged element exists.
+function Window:LoadAutoloadConfig(): boolean
+	local name = self:GetAutoLoad()
+	if not name then
+		return false
+	end
+	local ok, err = self:LoadConfig(name)
+	if ok then
+		self:Notify({ Title = "Config loaded", Content = `Auto-loaded "{name}"`, Icon = "folder" })
+	else
+		warn(`[MD3] autoload failed: {err}`)
+	end
+	return ok
+end
+Window.LoadConfiguration = Window.LoadAutoloadConfig
+
+--== Built-in settings tab ==--
+
+-- Theme mode, accent color, toggle key, unload and (when the executor has
+-- file functions) config save/load/delete/autoload.
+function Window:AddSettingsTab(props)
+	props = props or {}
+	local tab = self:AddTab({ Title = props.Title or "Settings", Icon = props.Icon or "settings" })
+
+	local appearance = tab:AddSection("Appearance")
+	appearance:AddToggle({
+		Title = "Dark mode",
+		Default = self.Theme.Mode == "Dark",
+		Flag = "MD3_DarkMode",
+		Callback = function(on)
+			self.Theme:SetMode(on and "Dark" or "Light")
+		end,
+	})
+	appearance:AddColorPicker({
+		Title = "Accent color",
+		Description = "Seed color the whole palette is generated from",
+		Default = self.Theme.Seed,
+		Flag = "MD3_Accent",
+		Callback = function(color)
+			self.Theme:SetSeedColor(color)
+		end,
+	})
+
+	local interface = tab:AddSection("Interface")
+	interface:AddKeybind({
+		Title = "Toggle UI",
+		Description = "Shows / hides this window",
+		Default = self._toggleKey,
+		Flag = "MD3_ToggleKey",
+		ChangedCallback = function(key)
+			self:SetToggleKey(key)
+		end,
+	})
+	interface:AddButton({
+		Title = "Unload",
+		Description = "Destroys this UI",
+		Icon = "close",
+		Callback = function()
+			self:Destroy()
+		end,
+	})
+
+	if self:CanSaveConfigs() then
+		local configs = tab:AddSection("Configuration")
+		local nameInput = configs:AddInput({ Title = "Config name", Placeholder = "default" })
+		local list = configs:AddDropdown({ Title = "Saved configs", Options = self:ListConfigs() })
+
+		local function selectedName()
+			if nameInput.Value ~= "" then
+				return nameInput.Value
+			end
+			return list.Value or "default"
+		end
+		local function refresh()
+			list:SetOptions(self:ListConfigs())
+		end
+
+		configs:AddButton({
+			Title = "Save config",
+			Icon = "save",
+			Callback = function()
+				local name = selectedName()
+				local ok, err = self:SaveConfig(name)
+				refresh()
+				list:Set(name, true)
+				self:Notify({ Title = ok and "Config saved" or "Save failed", Content = ok and name or err, Icon = ok and "save" or "error" })
+			end,
+		})
+		configs:AddButton({
+			Title = "Load config",
+			Icon = "folder",
+			Callback = function()
+				local name = selectedName()
+				local ok, err = self:LoadConfig(name)
+				self:Notify({ Title = ok and "Config loaded" or "Load failed", Content = ok and name or err, Icon = ok and "folder" or "error" })
+			end,
+		})
+		configs:AddButton({
+			Title = "Delete config",
+			Icon = "delete",
+			Callback = function()
+				local name = selectedName()
+				self:DeleteConfig(name)
+				refresh()
+				self:Notify({ Title = "Config deleted", Content = name, Icon = "delete" })
+			end,
+		})
+		local autoload
+		autoload = configs:AddButton({
+			Title = "Set as autoload",
+			Description = `Current: {self:GetAutoLoad() or "none"}`,
+			Icon = "bolt",
+			Callback = function()
+				local name = selectedName()
+				self:SetAutoLoad(name)
+				autoload:SetDescription(`Current: {name}`)
+				self:Notify({ Title = "Autoload set", Content = name, Icon = "bolt" })
+			end,
+		})
+		configs:AddButton({
+			Title = "Clear autoload",
+			Icon = "block",
+			Callback = function()
+				self:SetAutoLoad(nil)
+				autoload:SetDescription("Current: none")
+			end,
+		})
+	end
+
+	return tab
+end
+
+--== Teardown ==--
+
+function Window:Destroy()
+	if self._destroyed then
+		return
+	end
+	self._destroyed = true
+	self.OnUnload:Fire()
+	for _, tab in self.Tabs do
+		pcall(tab.Destroy, tab)
+	end
+	self._maid:Destroy()
+	self._themer:Destroy()
+	Elevation.Remove(self.Instance)
+	self.Gui:Destroy()
+
+	local registry = Env.Registry()
+	if registry.Windows and registry.Windows[self._registryKey] == self then
+		registry.Windows[self._registryKey] = nil
+	end
+end
+Window.Unload = Window.Destroy
+
+return Window

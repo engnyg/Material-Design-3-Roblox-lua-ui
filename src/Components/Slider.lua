@@ -42,6 +42,18 @@ function Slider.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 
+	-- Invisible full-width button so clicking/tapping anywhere on the track
+	-- jumps there and starts a drag, not just on the handle.
+	local trackHitArea = Create("TextButton") {
+		Name = "TrackHitArea",
+		AutoButtonColor = false,
+		Text = "",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Parent = root,
+	}
+	self._trackHitArea = trackHitArea
+
 	local inactiveTrack = Create("Frame") {
 		Name = "InactiveTrack",
 		AnchorPoint = Vector2.new(0, 0.5),
@@ -184,11 +196,13 @@ function Slider:_bindInput()
 		end)
 	end
 
-	self._maid:GiveTask(handleArea.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			beginDrag(input)
-		end
-	end))
+	for _, target in { handleArea, self._trackHitArea } do
+		self._maid:GiveTask(target.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				beginDrag(input)
+			end
+		end))
+	end
 end
 
 function Slider:SetValue(value: number, silent: boolean?)
@@ -210,6 +224,7 @@ end
 function Slider:SetDisabled(disabled: boolean)
 	self._disabled = disabled
 	self._handleArea.Active = not disabled
+	self._trackHitArea.Active = not disabled
 	self:_render(true)
 end
 

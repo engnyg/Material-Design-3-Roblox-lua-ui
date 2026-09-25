@@ -1,6 +1,81 @@
 # MD3 — Roblox Luau 版 Material Design 3 UI 庫
 
-一個從零打造、可直接用 [Rojo](https://rojo.space/) 同步進 Roblox Studio 的 Material Design 3（M3）UI 元件庫，純 Luau 撰寫、不依賴任何外部套件或圖片素材。
+一個從零打造的 Material Design 3（M3）UI 庫，純 Luau 撰寫、不依賴任何外部套件或圖片素材。**主要給 Roblox 腳本執行器（executor）使用**：一行 `loadstring` 載入後，就能用 `CreateWindow → Tab → Section → AddToggle / AddSlider …` 的方式快速組出 M3 風格的腳本介面；底層的 16 個 M3 元件也能單獨使用，或照舊用 [Rojo](https://rojo.space/) 同步進 Roblox Studio。
+
+## Executor 快速開始
+
+```lua
+local MD3 = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/dist/MaterialDesign3.luau"
+))()
+
+local Window = MD3:CreateWindow({
+    Title = "My Hub",
+    Subtitle = "v1.0",
+    Icon = "widgets",                    -- Material 圖標名稱（可省略）
+    Mode = "Dark",                       -- "Light" | "Dark"
+    Seed = Color3.fromHex("#6750A4"),    -- 主題種子色，整套配色由它生成
+    ToggleKey = Enum.KeyCode.RightShift, -- 顯示／隱藏視窗
+    ConfigFolder = "MyHub",              -- 設定檔存放資料夾（executor workspace）
+})
+
+local Main = Window:AddTab({ Title = "Main", Icon = "home" })
+local Combat = Main:AddSection("Combat")
+
+Combat:AddToggle({
+    Title = "Auto farm",
+    Description = "自動打怪",
+    Default = false,
+    Flag = "AutoFarm",                   -- 有 Flag 的元件會被存進設定檔
+    Callback = function(on) print("AutoFarm:", on) end,
+})
+
+Combat:AddSlider({ Title = "WalkSpeed", Min = 16, Max = 200, Default = 16, Step = 1, Flag = "WS",
+    Callback = function(v) game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = v end })
+
+Window:AddSettingsTab()      -- 內建設定頁：深色模式、主題色、切換鍵、設定檔存讀
+Window:LoadAutoloadConfig()  -- 放在腳本最後，載入「自動載入」設定檔
+
+Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Icon = "check_circle" })
+```
+
+完整示範（每種元件、對話框、通知、設定頁）見 [`examples/executor.lua`](examples/executor.lua)。
+
+### 視窗功能
+
+- **可拖曳**的 M3 視窗：頂部 App Bar（標題／副標題／縮小／關閉）、左側 Navigation Drawer 分頁、右側可捲動內容區。
+- **切換鍵**（預設 RightShift）隱藏／顯示；關閉鈕會跳出 M3 對話框讓你選「隱藏」或「卸載（Unload）」。
+- **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
+- **防偵測／相容性**：ScreenGui 優先放進 `gethui()`，其次 `CoreGui`，最後才是 `PlayerGui`；有 `syn.protect_gui` / `protectgui` 會自動套用；ScreenGui 名稱隨機。
+- **重複執行不會疊視窗**：同一個 `Title`（或 `Id`）的視窗再次建立時，舊的會先被卸載（透過 `getgenv()` 記錄）。
+- **真正的 Material 圖標**：支援 `writefile` + `getcustomasset` 的 executor 會自動下載 Google 官方 Material Icons 字型（Apache-2.0）並載入，不需要上傳任何資產；不支援時退回簡單符號，不會出現方塊字。
+- **設定檔**：`Window:SaveConfig(name)` / `LoadConfig(name)` / `ListConfigs()` / `DeleteConfig(name)` / `SetAutoLoad(name)`，存成 JSON（Color3、KeyCode 會自動序列化）。
+- **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetSeedColor(color)`，整個視窗立即重新上色。
+- **Callback 錯誤不會弄壞 UI**：所有 Callback 都在 `xpcall` 中執行，錯誤只會 `warn` 出來。
+- `Window.OnUnload:Connect(fn)`：UI 被卸載時停止你的迴圈／連線。
+
+### 元件（Tab 與 Section 都能呼叫）
+
+| 方法 | 主要參數 | 值（`.Value` / Callback 參數） |
+| --- | --- | --- |
+| `AddButton` | `Title`、`Description`、`Icon`、`Callback` | —（`:Fire()` 手動觸發） |
+| `AddToggle` | `Default`、`Flag`、`Callback` | `boolean` |
+| `AddSlider` | `Min`、`Max`、`Step`、`Default`、`Suffix` | `number`（右側數值可直接輸入） |
+| `AddInput` | `Placeholder`、`Default`、`Numeric`、`Finished`、`ClearOnSubmit` | `string` |
+| `AddDropdown` | `Options`、`Default`、`Multi`、`Searchable` | 單選 `string`／多選 `{string}`；`:SetOptions(list)` 更新選項 |
+| `AddKeybind` | `Default`、`Mode`（`Press`/`Toggle`/`Hold`）、`Callback`、`ChangedCallback` | `Enum.KeyCode`（點一下再按鍵；Esc 取消、Backspace 清除） |
+| `AddColorPicker` | `Default`、`Callback` | `Color3`（SV 方塊 + 色相條 + HEX 輸入） |
+| `AddLabel` | 文字或 `{ Text, Color }` | `:Set(text)` |
+| `AddParagraph` | `Title`、`Content` | `:Set({ Title, Content })` |
+| `AddDivider` | — | — |
+
+所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
+
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+
+### Executor 環境工具（`MD3.Env`）
+
+各家 executor 的全域函式名稱不一，`MD3.Env` 幫你包好並在不支援時安全退回：`GetGuiParent()`、`ProtectGui(gui)`、`ReadFile` / `WriteFile` / `IsFile` / `IsFolder` / `MakeFolder`（可多層）/ `ListFiles` / `DeleteFile`、`HttpGet(url)`、`GetCustomAsset(path)`、`SetClipboard(text)`、`Registry()`，以及 `Env.Name`（`identifyexecutor()`）、`Env.CanUseFiles`、`Env.CanUseCustomAssets`。
 
 ## 特色
 
@@ -23,20 +98,9 @@
 
 ### 從外部載入（單檔版）
 
-`dist/MaterialDesign3.luau` 是把整個 `src/` 打包成的單一檔案，執行後回傳 `MD3` 表，不依賴任何 `script` 階層：
+`dist/MaterialDesign3.luau` 是把整個 `src/` 打包成的單一檔案，執行後回傳 `MD3` 表，不依賴任何 `script` 階層。Executor 直接用上面「Executor 快速開始」的 `loadstring(game:HttpGet(...))()` 即可。
 
-```lua
--- source 是 dist/MaterialDesign3.luau 的完整內容，用你的環境能用的方式取得
-local MD3 = loadstring(source)()
-```
-
-原始檔網址：
-
-```
-https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/dist/MaterialDesign3.luau
-```
-
-在一般 Roblox 遊戲裡要注意：客戶端（LocalScript）不能發 HTTP 請求也不能 `loadstring`，只有伺服器能用 `HttpService:GetAsync` 且須開啟 `ServerScriptService.LoadStringEnabled`。所以要在遊戲的客戶端 UI 使用，最穩的做法是把這個單檔內容貼進一個 ModuleScript（放在 `ReplicatedStorage`）然後 `require` 它。
+在一般 Roblox 遊戲（非 executor）裡要注意：客戶端（LocalScript）不能發 HTTP 請求也不能 `loadstring`，只有伺服器能用 `HttpService:GetAsync` 且須開啟 `ServerScriptService.LoadStringEnabled`。所以要在遊戲的客戶端 UI 使用，最穩的做法是把這個單檔內容貼進一個 ModuleScript（放在 `ReplicatedStorage`）然後 `require` 它。
 
 修改 `src/` 之後重新打包並跑冒煙測試：
 
@@ -45,9 +109,9 @@ python3 tools/bundle.py                 # 產生 dist/MaterialDesign3.luau
 python3 tools/smoke/run.py              # 需要 luau CLI，可用 LUAU=/path/to/luau 指定
 ```
 
-冒煙測試會用 `loadstring` 載入打包檔（跟外部載入同一條路徑），在模擬的 Roblox API 上建立並操作全部 16 個元件，再切換主題。
+冒煙測試會用 `loadstring` 載入打包檔（跟 executor 載入同一條路徑），在模擬的 Roblox API 與模擬的 executor 檔案系統上建立並操作全部 16 個元件、executor 視窗的每一種元件、設定檔存讀、切換鍵、重複建立視窗的替換，再切換主題。
 
-## 快速開始
+## 單獨使用元件（Studio / 自己的遊戲）
 
 ```lua
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -69,7 +133,7 @@ button.Activated:Connect(function()
 end)
 ```
 
-完整範例請看 `example/init.client.lua`，涵蓋文中列出的所有元件。
+完整範例請看 `example/init.client.lua`，涵蓋文中列出的所有元件。（這份是給 Rojo／Studio 的 LocalScript 範例；executor 請看 `examples/executor.lua`。）
 
 ## 元件一覽
 
@@ -108,7 +172,18 @@ end)
 - `StateLayer.lua` / `Ripple.lua`：hover/press/focus 疊層與水波紋回饋。
 - `Icons.lua`：Material 平面圖標系統，見下方「圖標（不用 emoji）」。
 
+## Executor 層（`src/Executor`、`src/Window`）
+
+- `Executor/Env.lua`：executor 全域函式的相容層（見上方「Executor 環境工具」）。
+- `Executor/IconFont.lua`：`MD3.IconFont.Load()` 下載 `MaterialIcons-Regular.ttf` → 寫進 workspace → 產生 Roblox font family JSON → 用 `getcustomasset` 載入，並自動呼叫 `Icons.SetFont`。`CreateWindow` 預設會做這件事（`IconFont = false` 可關閉）。
+- `Window/Window.lua`、`Window/Tab.lua`：視窗、分頁與 Section。
+- `Window/Elements/*`：各個視窗元件；列表項目版面（標題／說明／右側控制項）共用 `Elements/Base.lua`。
+- `Window/Themer.lua`：把一般 Instance 屬性綁到主題色角色，換主題時自動重新上色。
+- `Window/Config.lua`、`Window/Notifier.lua`：設定檔序列化與堆疊式通知。
+
 ## 圖標（不用 emoji）
+
+**在 executor 上不用做任何事**：`CreateWindow` 會自動用 `MD3.IconFont.Load()` 下載並載入官方字型（需要 executor 支援 `writefile` 與 `getcustomasset`）。以下是 Studio／自己遊戲裡的做法。
 
 Roblox 沒有內建 Material Symbols 字型，所以要顯示「真正的」M3 平面圖標，本質上一定要一個圖標字型資產——沒有捷徑。`Icons.lua` 幫你把這件事做成一次性設定：
 
@@ -121,10 +196,13 @@ Roblox 沒有內建 Material Symbols 字型，所以要顯示「真正的」M3 �
 
 設定完成後，`Checkbox` 的勾勾／減號、`Chip` 的關閉按鈕都會自動改用 `Icons.lua` 內建的 Material 圖標字碼（`check`、`remove`、`close`…共 110+ 個，字碼取自官方 `MaterialIcons-Regular.codepoints`），純文字字元渲染、可直接套色/縮放，不是圖片、更不是 emoji。在呼叫 `SetFont` 之前，這些元件會先用簡單的幾何符號（`✓`/`−`/`✕`）當退場機制，避免字型未設定時顯示空白方塊；一旦設定字型就會自動切換成真正的 Material 圖標。
 
+需要表裡沒有的圖標時，可以從官方 `MaterialIcons-Regular.codepoints` 查字碼後用 `Icons.Register("name", 0xe000)` 加入；`Icons.CanRender(name)` 可判斷目前能不能畫出該圖標。
+
 `Icons.Glyph("settings")` / `Icons.Apply(textObject, "settings")` 也可以在你自己的 UI 裡直接使用，或用來取代 `Button` / `IconButton` / `FAB` 目前吃的 `Icon = "rbxassetid://..."`（把 `Icon` 換成一個帶有 Material 圖標字型的 `TextLabel` 即可）。
 
 ## 已知取捨
 
 - 色彩生成用 HSL 近似 HCT，色階曲線與官方 Material Theme Builder 不會 100% 一致，但保留了 M3 的分層邏輯（13 級色調、container/on-container 配對等）。
+- 陰影（`Elevation`）是放在元件旁邊的兄弟節點，所以如果父層有 `UIListLayout`，陰影也會被排版而佔位；目前 executor 視窗只在不受排版影響的地方（主視窗、對話框）使用陰影。
 - 陰影用堆疊 Frame 模擬柔邊效果，效果不如向量陰影細緻，但完全不需要外部貼圖資源；若想要更精緻的陰影，可以自行替換 `Elevation.Apply` 的實作改用你上傳的陰影圖。
 - `Button` / `IconButton` / `FAB` / `TopAppBar` / `NavigationBar` 的 `Icon` props 目前吃圖片資產（`rbxassetid://...`），因為每個 Roblox 專案的圖示資源都不同；請把你自己上傳的圖示 ID 傳進去，或改用上面的 `Icons.lua` 文字圖標方案。

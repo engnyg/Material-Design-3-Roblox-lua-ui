@@ -1,7 +1,17 @@
 --[[
 	MD3 — a Material Design 3 UI library for Roblox Luau.
 
-	Quick start:
+	Executors:
+		local MD3 = loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/dist/MaterialDesign3.luau"
+		))()
+		local Window = MD3:CreateWindow({ Title = "My Hub" })
+		local Main = Window:AddTab({ Title = "Main", Icon = "home" })
+		Main:AddToggle({ Title = "Auto farm", Flag = "AutoFarm", Callback = function(on) end })
+
+		See examples/executor.lua for every element.
+
+	Components directly (Studio / your own game):
 		local MD3 = require(path.to.MaterialDesign3)
 
 		-- optional: recolor the whole app from one seed color (mutates the
@@ -49,6 +59,18 @@ MD3.TopAppBar = require(script.Components.TopAppBar)
 MD3.NavigationBar = require(script.Components.NavigationBar)
 MD3.ProgressIndicator = require(script.Components.ProgressIndicator)
 MD3.Divider = require(script.Components.Divider)
+
+-- Executor layer
+MD3.Env = require(script.Executor.Env)
+MD3.IconFont = require(script.Executor.IconFont)
+MD3.Window = require(script.Window.Window)
+
+-- Creates an executor-style window. Works as MD3:CreateWindow{...} or
+-- MD3.CreateWindow{...}.
+function MD3.CreateWindow(selfOrProps, maybeProps)
+	local props = if selfOrProps == MD3 then maybeProps else selfOrProps
+	return MD3.Window.new(props)
+end
 
 -- Shorthand for MD3.Theme.new(seed, mode)
 function MD3.new(seed: Color3?, mode: string?)

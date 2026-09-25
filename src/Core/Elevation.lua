@@ -20,12 +20,18 @@ local LEVELS = {
 
 local LAYERS = 3
 
+-- surface -> its shadow holder. Weak keys so a forgotten surface doesn't pin
+-- its shadow in memory. (Instance:GetDebugId would need plugin security,
+-- which normal LocalScripts and some executors don't have.)
+local shadows = setmetatable({}, { __mode = "k" })
+
 local function syncTransform(holder: Frame, surface: GuiObject)
 	holder.AnchorPoint = surface.AnchorPoint
 	holder.Position = surface.Position
 	holder.Size = surface.Size
 	holder.Rotation = surface.Rotation
 	holder.LayoutOrder = surface.LayoutOrder - 1
+	holder.Visible = surface.Visible
 end
 
 -- Attaches (or replaces) a shadow behind `surface`. `cornerRadius` should
@@ -66,7 +72,7 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 	end
 
 	holder.Parent = surface.Parent
-	holder:SetAttribute("_md3ShadowFor", surface:GetDebugId())
+	shadows[surface] = holder
 
 	local connections = {}
 	table.insert(connections, surface:GetPropertyChangedSignal("Position"):Connect(function()
@@ -78,6 +84,9 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 	table.insert(connections, surface:GetPropertyChangedSignal("AnchorPoint"):Connect(function()
 		syncTransform(holder, surface)
 	end))
+	table.insert(connections, surface:GetPropertyChangedSignal("Visible"):Connect(function()
+		syncTransform(holder, surface)
+	end))
 	table.insert(connections, surface.AncestryChanged:Connect(function(_, parent)
 		if not parent then
 			holder:Destroy()
@@ -87,6 +96,9 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 		holder:Destroy()
 	end))
 	table.insert(connections, holder.Destroying:Connect(function()
+		if shadows[surface] == holder then
+			shadows[surface] = nil
+		end
 		for _, c in connections do
 			c:Disconnect()
 		end
@@ -96,13 +108,10 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 end
 
 function Elevation.Remove(surface: GuiObject)
-	if not surface.Parent then
-		return
-	end
-	for _, sibling in surface.Parent:GetChildren() do
-		if sibling.Name == "_MD3Shadow" and sibling:GetAttribute("_md3ShadowFor") == surface:GetDebugId() then
-			sibling:Destroy()
-		end
+	local holder = shadows[surface]
+	if holder then
+		shadows[surface] = nil
+		holder:Destroy()
 	end
 end
 

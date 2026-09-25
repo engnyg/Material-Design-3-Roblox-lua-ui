@@ -57,17 +57,26 @@ function Chip.new(props)
 	}
 	self._stroke = stroke
 
+	-- Padding + layout live on an inner frame: the state layer and ripples
+	-- are parented to the chip itself and must not be laid out.
+	local content = Create("Frame") {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = chip,
+	}
 	Create("UIPadding") {
 		PaddingLeft = UDim.new(0, 12),
 		PaddingRight = UDim.new(0, 12),
-		Parent = chip,
+		Parent = content,
 	}
 	Create("UIListLayout") {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 8),
-		Parent = chip,
+		Parent = content,
 	}
 
 	local leadingIcon = nil
@@ -78,7 +87,7 @@ function Chip.new(props)
 			Size = UDim2.fromOffset(18, 18),
 			Image = props.Icon,
 			LayoutOrder = 1,
-			Parent = chip,
+			Parent = content,
 		}
 	end
 	self._leadingIcon = leadingIcon
@@ -90,7 +99,7 @@ function Chip.new(props)
 		Size = UDim2.new(0, 0, 1, 0),
 		Text = props.Text or "",
 		LayoutOrder = 2,
-		Parent = chip,
+		Parent = content,
 	}
 	Typography.Apply(label, "LabelLarge")
 	self._label = label
@@ -104,7 +113,7 @@ function Chip.new(props)
 			Size = UDim2.fromOffset(18, 18),
 			TextScaled = true,
 			LayoutOrder = 3,
-			Parent = chip,
+			Parent = content,
 		}
 		Icons.Apply(removeButton, "close")
 	end

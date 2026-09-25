@@ -36,17 +36,40 @@ local function makeSignal()
 	return signal
 end
 
+-- Roblox value types are userdata; the mock builds them with newproxy and
+-- records the Roblox type name in a __type metafield, which the typeof
+-- override at the bottom reports. (test.luau setfenv's the bundle chunk so
+-- that override is used instead of Luau's builtin fast path.)
+local function hostValue(typeName, index, extra)
+	local proxy = newproxy(true)
+	local mt = getmetatable(proxy)
+	mt.__type = typeName
+	mt.__index = index
+	for k, v in extra or {} do
+		mt[k] = v
+	end
+	return proxy
+end
+
 local enumCache = {}
 local function enumProxy(path)
 	if enumCache[path] then
 		return enumCache[path]
 	end
-	local proxy = setmetatable({}, {
-		__index = function(_, key)
-			return enumProxy(path .. "." .. key)
-		end,
+	local depth = select(2, path:gsub("%.", "")) -- 0 = Enum, 1 = Enum.X, 2 = Enum.X.Y
+	local lastSegment = path:match("([^%.]+)$")
+	local proxy = hostValue(depth == 2 and "EnumItem" or depth == 1 and "Enum" or "Enums", function(_, key)
+		if depth == 2 and key == "Name" then
+			return lastSegment
+		elseif depth == 2 and key == "EnumType" then
+			return enumProxy(path:match("^(.*)%.[^%.]+$"))
+		end
+		return enumProxy(path .. "." .. key)
+	end, {
+		-- Like Roblox: tostring(Enum.KeyCode) == "KeyCode",
+		-- tostring(Enum.KeyCode.Q) == "Enum.KeyCode.Q"
 		__tostring = function()
-			return path
+			return depth == 1 and lastSegment or path
 		end,
 	})
 	enumCache[path] = proxy
@@ -55,18 +78,78 @@ end
 Enum = enumProxy("Enum")
 
 Color3 = {}
-local Color3Meta = { __tostring = function(c) return `Color3({c.R}, {c.G}, {c.B})` end }
+local Color3Methods = {}
+local function color3Eq(a, b)
+	return a.R == b.R and a.G == b.G and a.B == b.B
+end
+local function color3ToString(c)
+	return `Color3({c.R}, {c.G}, {c.B})`
+end
 function Color3.new(r, g, b)
-	return setmetatable({ R = r or 0, G = g or 0, B = b or 0 }, Color3Meta)
+	local data = { R = r or 0, G = g or 0, B = b or 0 }
+	return hostValue("Color3", function(_, key)
+		local v = data[key]
+		if v ~= nil then
+			return v
+		end
+		return Color3Methods[key]
+	end, { __eq = color3Eq, __tostring = color3ToString })
+end
+function Color3.fromRGB(r, g, b)
+	return Color3.new((r or 0) / 255, (g or 0) / 255, (b or 0) / 255)
 end
 function Color3.fromHex(hex)
 	hex = hex:gsub("#", "")
+	assert(#hex == 6, "Unable to convert characters to hex value")
 	return Color3.new(
 		tonumber(hex:sub(1, 2), 16) / 255,
 		tonumber(hex:sub(3, 4), 16) / 255,
 		tonumber(hex:sub(5, 6), 16) / 255
 	)
 end
+function Color3.fromHSV(h, s, v)
+	local i = math.floor(h * 6)
+	local f = h * 6 - i
+	local p, q, t = v * (1 - s), v * (1 - f * s), v * (1 - (1 - f) * s)
+	i = i % 6
+	if i == 0 then return Color3.new(v, t, p) end
+	if i == 1 then return Color3.new(q, v, p) end
+	if i == 2 then return Color3.new(p, v, t) end
+	if i == 3 then return Color3.new(p, q, v) end
+	if i == 4 then return Color3.new(t, p, v) end
+	return Color3.new(v, p, q)
+end
+function Color3Methods:ToHSV()
+	local r, g, b = self.R, self.G, self.B
+	local max, min = math.max(r, g, b), math.min(r, g, b)
+	local d = max - min
+	local h = 0
+	if d > 0 then
+		if max == r then
+			h = ((g - b) / d) % 6
+		elseif max == g then
+			h = (b - r) / d + 2
+		else
+			h = (r - g) / d + 4
+		end
+		h /= 6
+	end
+	return h, max == 0 and 0 or d / max, max
+end
+function Color3Methods:ToHex()
+	return string.format("%02x%02x%02x", math.round(self.R * 255), math.round(self.G * 255), math.round(self.B * 255))
+end
+
+ColorSequenceKeypoint = { new = function(t, c) return { Time = t, Value = c } end }
+ColorSequence = {
+	new = function(arg)
+		if type(arg) ~= "table" or arg[1] == nil then
+			return { Keypoints = { { Time = 0, Value = arg }, { Time = 1, Value = arg } } }
+		end
+		assert(arg[1].Time == 0 and arg[#arg].Time == 1, "ColorSequence must span 0..1")
+		return { Keypoints = arg }
+	end,
+}
 
 Font = { fromEnum = function(e) return { Family = tostring(e) } end, new = function(f) return { Family = f } end }
 
@@ -89,6 +172,10 @@ Vector2Meta.__sub = function(a, b) return Vector2.new(a.X - b.X, a.Y - b.Y) end
 Vector2Meta.__add = function(a, b) return Vector2.new(a.X + b.X, a.Y + b.Y) end
 
 TweenInfo = { new = function(...) return { ... } end }
+
+warn = function(...)
+	print("WARN", ...)
+end
 
 NumberSequenceKeypoint = { new = function(t, v) return { Time = t, Value = v } end }
 NumberSequence = {
@@ -177,6 +264,15 @@ InstanceMeta.methods = {
 		return propSignals[key]
 	end,
 	IsA = function(self, className) return self.ClassName == className end,
+	FindFirstChildOfClass = function(self, className)
+		for _, child in rawget(self, "_childList") do
+			if child.ClassName == className then
+				return child
+			end
+		end
+		return nil
+	end,
+	GetFocusedTextBox = function() return nil end,
 }
 
 Instance = {}
@@ -228,14 +324,46 @@ services.TweenService = {
 		return tween
 	end,
 }
-services.UserInputService = { InputChanged = makeSignal(), InputEnded = makeSignal() }
-services.Players = { LocalPlayer = { PlayerGui = Instance.new("PlayerGui") } }
+services.UserInputService = {
+	InputBegan = makeSignal(),
+	InputChanged = makeSignal(),
+	InputEnded = makeSignal(),
+	TouchEnabled = false,
+	KeyboardEnabled = true,
+	GetFocusedTextBox = function() return nil end,
+}
+
+-- JSON stand-in: keeps encoded tables in memory and hands back a key,
+-- which is enough to round-trip configs through the fake file system.
+local jsonStore = {}
+services.HttpService = {
+	JSONEncode = function(_, value)
+		local key = `json#{#jsonStore + 1}`
+		table.insert(jsonStore, value)
+		jsonStore[key] = value
+		return key
+	end,
+	JSONDecode = function(_, text)
+		return jsonStore[text] or error("mock JSONDecode: unknown payload")
+	end,
+}
+
+local localPlayer = Instance.new("Player")
+local playerGui = Instance.new("PlayerGui")
+playerGui.Name = "PlayerGui"
+playerGui.Parent = localPlayer
+services.Players = { LocalPlayer = localPlayer }
+
+local camera = Instance.new("Camera")
+camera.ViewportSize = Vector2.new(1280, 720)
+workspace = { CurrentCamera = camera }
 
 game = {
 	GetService = function(_, name)
 		return services[name] or error(`mock has no service {name}`)
 	end,
 }
+
 
 task = {
 	spawn = function(fn, ...)
@@ -248,5 +376,19 @@ task = {
 	delay = function() end,
 	wait = function() return coroutine.yield() end,
 }
+
+-- typeof that knows the mock's Roblox value types.
+local nativeTypeof = typeof
+typeof = function(value)
+	if type(value) == "userdata" then
+		local mt = getmetatable(value)
+		if type(mt) == "table" and mt.__type then
+			return mt.__type
+		end
+	elseif type(value) == "table" and getmetatable(value) == InstanceMeta then
+		return "Instance"
+	end
+	return nativeTypeof(value)
+end
 
 return { makeSignal = makeSignal }

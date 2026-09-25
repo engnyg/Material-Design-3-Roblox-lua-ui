@@ -1,6 +1,40 @@
 -- Loaded by tools/smoke/run.py, which defines BUNDLE_SOURCE and the Roblox mock.
+
+-- Fake executor environment (in-memory workspace folder). Defined before the
+-- bundle loads because Env captures these globals at load time.
+local files, folders = {}, {}
+writefile = function(path, content) files[path] = content end
+readfile = function(path) return files[path] or error(`no file {path}`) end
+isfile = function(path) return files[path] ~= nil end
+isfolder = function(path) return folders[path] == true end
+makefolder = function(path) folders[path] = true end
+delfile = function(path) files[path] = nil end
+listfiles = function(folder)
+	local out = {}
+	for path in files do
+		if path:sub(1, #folder + 1) == folder .. "/" and not path:sub(#folder + 2):find("/") then
+			table.insert(out, path)
+		end
+	end
+	return out
+end
+getcustomasset = function(path)
+	assert(files[path], `getcustomasset: missing {path}`)
+	return `rbxasset://custom/{path}`
+end
+local genv = {}
+getgenv = function() return genv end
+identifyexecutor = function() return "MockExecutor", "1.0" end
+game.HttpGet = function(_, url)
+	assert(url:find("MaterialIcons%-Regular%.ttf"), `unexpected HttpGet {url}`)
+	return string.rep("x", 20000)
+end
+
 local chunk, loadErr = loadstring(BUNDLE_SOURCE, "=MaterialDesign3")
 assert(chunk, loadErr)
+-- Touching the chunk's environment turns off Luau's builtin fast paths, so
+-- the bundle sees the mock's typeof() instead of the native one.
+setfenv(chunk, getfenv())
 local MD3 = chunk()
 
 local checks = 0
@@ -121,5 +155,137 @@ theme:Toggle()
 check(MD3.Icons.Glyph("check") == "\u{2713}", "Icons fallback glyph wrong")
 MD3.Icons.SetFont(Font.new("rbxassetid://0"))
 check(MD3.Icons.Glyph("check") == utf8.char(0xe5ca), "Icons codepoint wrong")
+
+--== Executor layer ==--
+local Env = MD3.Env
+check(Env.IsExecutor and Env.Name == "MockExecutor", "Env did not detect the executor")
+check(Env.CanUseFiles and Env.CanUseCustomAssets, "Env did not detect file functions")
+Env.MakeFolder("A/B/C")
+check(isfolder("A") and isfolder("A/B") and isfolder("A/B/C"), "Env.MakeFolder is not recursive")
+check(Env.GetGuiParent() == game:GetService("Players").LocalPlayer.PlayerGui, "Env.GetGuiParent fallback wrong")
+check(#Env.RandomName() == 12, "Env.RandomName length")
+
+local font = MD3.IconFont.Load("MD3")
+check(font ~= nil and files["MD3/MaterialIcons-Regular.ttf"] ~= nil, "IconFont did not download + load")
+
+local host = Instance.new("ScreenGui")
+local loadedCallbacks = {}
+local function record(name)
+	return function(...)
+		loadedCallbacks[name] = table.pack(...)
+	end
+end
+
+local Window = MD3:CreateWindow({
+	Title = "Smoke Hub",
+	Subtitle = "test",
+	Icon = "widgets",
+	Parent = host,
+	MobileButton = true,
+	ConfigFolder = "SmokeHub",
+})
+check(Window.Gui.Parent == host, "Window did not parent its ScreenGui")
+check(Window.Theme.Mode == "Dark", "Window should default to dark mode")
+
+local main = Window:AddTab({ Title = "Main", Icon = "home" })
+check(Window.SelectedTab == main and main.Instance.Visible, "first tab not auto-selected")
+local other = Window:CreateTab("Other")
+local section = main:AddSection("Combat")
+
+local clicks = 0
+local button = section:AddButton({ Title = "Hit", Callback = function() clicks += 1 end })
+button.Instance.Activated:Fire()
+check(clicks == 1, "Button callback did not fire")
+
+local toggle = section:AddToggle({ Title = "Auto", Flag = "Auto", Callback = record("toggle") })
+toggle.Instance.Activated:Fire()
+check(toggle.Value == true and loadedCallbacks.toggle[1] == true, "Toggle row click did not toggle")
+toggle:Set(false)
+check(toggle._switch:GetValue() == false, "Toggle:Set did not update the switch")
+
+local slider = section:AddSlider({ Title = "Speed", Min = 16, Max = 100, Step = 0.5, Default = 20, Suffix = " ws", Flag = "Speed", Callback = record("slider") })
+slider:Set(33.3)
+check(slider.Value == 33.5 and loadedCallbacks.slider[1] == 33.5, "Slider did not snap to step")
+slider:Set(1000)
+check(slider.Value == 100, "Slider did not clamp")
+
+local input = main:AddInput({ Title = "Name", Numeric = true, Flag = "Name", Callback = record("input") })
+input:Set("12a3")
+check(input.Value == "123", "Numeric Input did not filter")
+
+local dropdown = main:AddDropdown({ Title = "Weapon", Options = { "Sword", "Bow" }, Default = "Sword", Flag = "Weapon", Callback = record("dropdown") })
+dropdown:Set("Bow")
+check(dropdown.Value == "Bow" and loadedCallbacks.dropdown[1] == "Bow", "Dropdown single select failed")
+dropdown:SetOptions({ "Staff" })
+check(dropdown.Value == nil, "Dropdown kept a removed option")
+
+local multi = main:AddDropdown({ Title = "Targets", Options = { "A", "B", "C" }, Multi = true, Default = { "A" }, Flag = "Targets" })
+multi:Set({ B = true, C = true })
+table.sort(multi.Value)
+check(#multi.Value == 2 and multi.Value[1] == "B", "Multi dropdown dictionary input failed")
+
+local pressed = 0
+local keybind = main:AddKeybind({ Title = "Dash", Default = "Q", Flag = "Dash", Callback = function() pressed += 1 end })
+check(keybind.Value == Enum.KeyCode.Q, "Keybind string default not parsed")
+local uis = game:GetService("UserInputService")
+uis.InputBegan:Fire({ UserInputType = Enum.UserInputType.Keyboard, KeyCode = Enum.KeyCode.Q }, false)
+check(pressed == 1, "Keybind did not fire")
+uis.InputBegan:Fire({ UserInputType = Enum.UserInputType.Keyboard, KeyCode = Enum.KeyCode.Q }, true)
+check(pressed == 1, "Keybind fired on a game-processed input")
+
+local picker = other:AddColorPicker({ Title = "ESP", Default = Color3.fromRGB(255, 0, 0), Flag = "Esp", Callback = record("picker") })
+picker:Set("#00ff00")
+check(picker.Value:ToHex() == "00ff00", "ColorPicker hex input failed")
+
+local label = other:AddLabel("hello")
+label:Set("world")
+check(label.Instance.Text == "world", "Label:Set failed")
+other:AddParagraph({ Title = "About", Content = "text" })
+other:AddDivider()
+
+-- Toggle key hides/shows the window
+uis.InputBegan:Fire({ UserInputType = Enum.UserInputType.Keyboard, KeyCode = Enum.KeyCode.RightShift }, false)
+check(Window.Visible == false and Window.Instance.Visible == false, "toggle key did not hide the window")
+Window:Toggle()
+check(Window.Visible == true, "Window:Toggle did not show the window")
+Window:Minimize()
+check(Window.Minimized, "Window did not minimize")
+Window:Minimize(false)
+
+Window:Notify({ Title = "Hi", Content = "there", Duration = 1 })
+local dialog = Window:Dialog({ Title = "Q", Content = "?", Buttons = { { Title = "OK", Callback = record("dialog") } } })
+check(dialog.Instance.Visible, "Window:Dialog did not show")
+
+-- Configs round-trip through the fake file system
+local settings = Window:AddSettingsTab()
+check(Window.Flags.MD3_DarkMode and Window.Flags.MD3_ToggleKey, "settings tab flags missing")
+check(Window:SaveConfig("main"), "SaveConfig failed")
+check(table.find(Window:ListConfigs(), "main"), "ListConfigs missing saved config")
+toggle:Set(true)
+slider:Set(50)
+dropdown:SetOptions({ "Sword", "Bow" })
+multi:Set({})
+keybind:Set(Enum.KeyCode.E)
+picker:Set(Color3.new(0, 0, 1))
+check(Window:LoadConfig("main"), "LoadConfig failed")
+check(toggle.Value == false and slider.Value == 100, "config did not restore toggle/slider")
+check(#multi.Value == 2 and keybind.Value == Enum.KeyCode.Q, "config did not restore multi/keybind")
+check(picker.Value:ToHex() == "00ff00", "config did not restore color")
+Window:SetAutoLoad("main")
+check(Window:GetAutoLoad() == "main" and Window:LoadAutoloadConfig(), "autoload failed")
+settings:Select()
+check(Window.SelectedTab == settings, "Tab:Select failed")
+
+-- Theme switch with the whole window alive
+Window.Theme:Toggle()
+Window.Theme:SetSeedColor(Color3.fromHex("#B3261E"))
+
+-- Re-running the script replaces the old window
+local unloaded = false
+Window.OnUnload:Connect(function() unloaded = true end)
+local second = MD3.CreateWindow({ Title = "Smoke Hub", Parent = host })
+check(unloaded and Window._destroyed, "re-created window did not replace the old one")
+second:Destroy()
+check(second.Gui.Parent == nil, "Window:Destroy left the ScreenGui behind")
 
 print(`smoke test passed ({checks} checks)`)

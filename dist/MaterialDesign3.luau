@@ -42,7 +42,10 @@ end
 local N_root = newNode("MaterialDesign3", nil)
 local N_Components = newNode("Components", N_root)
 local N_Core = newNode("Core", N_root)
+local N_Executor = newNode("Executor", N_root)
 local N_Util = newNode("Util", N_root)
+local N_Window = newNode("Window", N_root)
+local N_Window_Elements = newNode("Elements", N_Window)
 
 -- Components/Button.lua
 loaders[newNode("Button", N_Components)] = function(script, require)
@@ -114,10 +117,20 @@ function Button.new(props)
 	}
 	Shape.Corner(Shape.Full, button)
 
+	-- Padding + layout live on an inner frame: the state layer and ripples
+	-- are parented to the button itself and must not be laid out.
+	local content = Create("Frame") {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = props.Size and UDim2.fromScale(1, 1) or UDim2.new(0, 0, 1, 0),
+		AutomaticSize = props.Size and Enum.AutomaticSize.None or Enum.AutomaticSize.X,
+		Parent = button,
+	}
+
 	local padding = Create("UIPadding") {
 		PaddingLeft = UDim.new(0, 24),
 		PaddingRight = UDim.new(0, 24),
-		Parent = button,
+		Parent = content,
 	}
 	self._padding = padding
 
@@ -126,7 +139,7 @@ function Button.new(props)
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 8),
-		Parent = button,
+		Parent = content,
 	}
 
 	local icon = nil
@@ -137,7 +150,7 @@ function Button.new(props)
 			Image = props.Icon,
 			Size = UDim2.fromOffset(18, 18),
 			LayoutOrder = 1,
-			Parent = button,
+			Parent = content,
 		}
 	end
 	self._icon = icon
@@ -149,7 +162,7 @@ function Button.new(props)
 		Size = UDim2.new(0, 0, 1, 0),
 		Text = props.Text or "",
 		LayoutOrder = 2,
-		Parent = button,
+		Parent = content,
 	}
 	Typography.Apply(label, "LabelLarge")
 	self._label = label
@@ -680,17 +693,26 @@ function Chip.new(props)
 	}
 	self._stroke = stroke
 
+	-- Padding + layout live on an inner frame: the state layer and ripples
+	-- are parented to the chip itself and must not be laid out.
+	local content = Create("Frame") {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = chip,
+	}
 	Create("UIPadding") {
 		PaddingLeft = UDim.new(0, 12),
 		PaddingRight = UDim.new(0, 12),
-		Parent = chip,
+		Parent = content,
 	}
 	Create("UIListLayout") {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 8),
-		Parent = chip,
+		Parent = content,
 	}
 
 	local leadingIcon = nil
@@ -701,7 +723,7 @@ function Chip.new(props)
 			Size = UDim2.fromOffset(18, 18),
 			Image = props.Icon,
 			LayoutOrder = 1,
-			Parent = chip,
+			Parent = content,
 		}
 	end
 	self._leadingIcon = leadingIcon
@@ -713,7 +735,7 @@ function Chip.new(props)
 		Size = UDim2.new(0, 0, 1, 0),
 		Text = props.Text or "",
 		LayoutOrder = 2,
-		Parent = chip,
+		Parent = content,
 	}
 	Typography.Apply(label, "LabelLarge")
 	self._label = label
@@ -727,7 +749,7 @@ function Chip.new(props)
 			Size = UDim2.fromOffset(18, 18),
 			TextScaled = true,
 			LayoutOrder = 3,
-			Parent = chip,
+			Parent = content,
 		}
 		Icons.Apply(removeButton, "close")
 	end
@@ -1190,19 +1212,29 @@ function FAB.new(props)
 	}
 	Shape.Corner(radius, button)
 
+	-- Padding + layout live on an inner frame: the state layer and ripples
+	-- are parented to the button itself and must not be laid out.
+	local content = Create("Frame") {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = self._extended and UDim2.new(0, 0, 1, 0) or UDim2.fromScale(1, 1),
+		AutomaticSize = self._extended and Enum.AutomaticSize.X or Enum.AutomaticSize.None,
+		Parent = button,
+	}
+
 	Create("UIListLayout") {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 12),
-		Parent = button,
+		Parent = content,
 	}
 
 	if self._extended then
 		Create("UIPadding") {
 			PaddingLeft = UDim.new(0, 16),
 			PaddingRight = UDim.new(0, 20),
-			Parent = button,
+			Parent = content,
 		}
 	end
 
@@ -1212,7 +1244,7 @@ function FAB.new(props)
 		Size = UDim2.fromOffset(ICON_SIZES[self._size], ICON_SIZES[self._size]),
 		Image = props.Icon or "",
 		LayoutOrder = 1,
-		Parent = button,
+		Parent = content,
 	}
 	self._icon = icon
 
@@ -1225,7 +1257,7 @@ function FAB.new(props)
 			Size = UDim2.new(0, 0, 1, 0),
 			Text = props.Text or "",
 			LayoutOrder = 2,
-			Parent = button,
+			Parent = content,
 		}
 		Typography.Apply(label, "LabelLarge")
 	end
@@ -2232,6 +2264,18 @@ function Slider.new(props)
 		LayoutOrder = props.LayoutOrder or 0,
 	}
 
+	-- Invisible full-width button so clicking/tapping anywhere on the track
+	-- jumps there and starts a drag, not just on the handle.
+	local trackHitArea = Create("TextButton") {
+		Name = "TrackHitArea",
+		AutoButtonColor = false,
+		Text = "",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Parent = root,
+	}
+	self._trackHitArea = trackHitArea
+
 	local inactiveTrack = Create("Frame") {
 		Name = "InactiveTrack",
 		AnchorPoint = Vector2.new(0, 0.5),
@@ -2374,11 +2418,13 @@ function Slider:_bindInput()
 		end)
 	end
 
-	self._maid:GiveTask(handleArea.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			beginDrag(input)
-		end
-	end))
+	for _, target in { handleArea, self._trackHitArea } do
+		self._maid:GiveTask(target.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				beginDrag(input)
+			end
+		end))
+	end
 end
 
 function Slider:SetValue(value: number, silent: boolean?)
@@ -2400,6 +2446,7 @@ end
 function Slider:SetDisabled(disabled: boolean)
 	self._disabled = disabled
 	self._handleArea.Active = not disabled
+	self._trackHitArea.Active = not disabled
 	self:_render(true)
 end
 
@@ -3195,12 +3242,18 @@ local LEVELS = {
 
 local LAYERS = 3
 
+-- surface -> its shadow holder. Weak keys so a forgotten surface doesn't pin
+-- its shadow in memory. (Instance:GetDebugId would need plugin security,
+-- which normal LocalScripts and some executors don't have.)
+local shadows = setmetatable({}, { __mode = "k" })
+
 local function syncTransform(holder: Frame, surface: GuiObject)
 	holder.AnchorPoint = surface.AnchorPoint
 	holder.Position = surface.Position
 	holder.Size = surface.Size
 	holder.Rotation = surface.Rotation
 	holder.LayoutOrder = surface.LayoutOrder - 1
+	holder.Visible = surface.Visible
 end
 
 -- Attaches (or replaces) a shadow behind `surface`. `cornerRadius` should
@@ -3241,7 +3294,7 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 	end
 
 	holder.Parent = surface.Parent
-	holder:SetAttribute("_md3ShadowFor", surface:GetDebugId())
+	shadows[surface] = holder
 
 	local connections = {}
 	table.insert(connections, surface:GetPropertyChangedSignal("Position"):Connect(function()
@@ -3253,6 +3306,9 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 	table.insert(connections, surface:GetPropertyChangedSignal("AnchorPoint"):Connect(function()
 		syncTransform(holder, surface)
 	end))
+	table.insert(connections, surface:GetPropertyChangedSignal("Visible"):Connect(function()
+		syncTransform(holder, surface)
+	end))
 	table.insert(connections, surface.AncestryChanged:Connect(function(_, parent)
 		if not parent then
 			holder:Destroy()
@@ -3262,6 +3318,9 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 		holder:Destroy()
 	end))
 	table.insert(connections, holder.Destroying:Connect(function()
+		if shadows[surface] == holder then
+			shadows[surface] = nil
+		end
 		for _, c in connections do
 			c:Disconnect()
 		end
@@ -3271,13 +3330,10 @@ function Elevation.Apply(surface: GuiObject, level: number, shadowColor: Color3?
 end
 
 function Elevation.Remove(surface: GuiObject)
-	if not surface.Parent then
-		return
-	end
-	for _, sibling in surface.Parent:GetChildren() do
-		if sibling.Name == "_MD3Shadow" and sibling:GetAttribute("_md3ShadowFor") == surface:GetDebugId() then
-			sibling:Destroy()
-		end
+	local holder = shadows[surface]
+	if holder then
+		shadows[surface] = nil
+		holder:Destroy()
 	end
 end
 
@@ -3325,13 +3381,17 @@ local CODEPOINTS = {
 	arrow_drop_up = 0xe5c7,
 	arrow_forward = 0xe5c8,
 	attach_file = 0xe226,
+	auto_awesome = 0xe65f,
 	autorenew = 0xe863,
+	backpack = 0xf19c,
 	bar_chart = 0xe26b,
 	block = 0xe14b,
+	bolt = 0xea0b,
 	bookmark = 0xe866,
 	bookmark_border = 0xe867,
 	brightness_dark = 0xe3a9,
 	brightness_light = 0xe3ac,
+	build = 0xe869,
 	calendar_today = 0xe935,
 	camera_alt = 0xe3b0,
 	cancel = 0xe5c9,
@@ -3343,7 +3403,10 @@ local CODEPOINTS = {
 	chevron_left = 0xe5cb,
 	chevron_right = 0xe5cc,
 	close = 0xe5cd,
+	close_fullscreen = 0xf1cf,
 	cloud = 0xe2bd,
+	code = 0xe86f,
+	colorize = 0xe3b8,
 	comment = 0xe0b9,
 	content_copy = 0xe14d,
 	credit_card = 0xe870,
@@ -3353,11 +3416,13 @@ local CODEPOINTS = {
 	done = 0xe876,
 	download = 0xf090,
 	drag_handle = 0xe25d,
+	drag_indicator = 0xe945,
 	edit = 0xe3c9,
 	error = 0xe000,
 	event = 0xe878,
 	expand_less = 0xe5ce,
 	expand_more = 0xe5cf,
+	explore = 0xe87a,
 	fast_forward = 0xe01f,
 	fast_rewind = 0xe020,
 	favorite = 0xe87d,
@@ -3374,6 +3439,7 @@ local CODEPOINTS = {
 	home = 0xe88a,
 	image = 0xe3f4,
 	info = 0xe88e,
+	keyboard = 0xe312,
 	keyboard_arrow_down = 0xe313,
 	keyboard_arrow_left = 0xe314,
 	keyboard_arrow_right = 0xe315,
@@ -3391,9 +3457,11 @@ local CODEPOINTS = {
 	menu = 0xe5d2,
 	mic = 0xe029,
 	mic_off = 0xe02b,
+	minimize = 0xe931,
 	more_horiz = 0xe5d3,
 	more_vert = 0xe5d4,
 	notifications = 0xe7f4,
+	open_in_full = 0xf1ce,
 	open_in_new = 0xe89e,
 	palette = 0xe40a,
 	pause = 0xe034,
@@ -3413,20 +3481,26 @@ local CODEPOINTS = {
 	send = 0xe163,
 	settings = 0xe8b8,
 	share = 0xe80d,
+	shield = 0xe9e0,
 	shopping_cart = 0xe8cc,
 	skip_next = 0xe044,
 	skip_previous = 0xe045,
 	sort = 0xe164,
+	speed = 0xe9e4,
+	sports_esports = 0xea28,
 	star = 0xe838,
 	stop = 0xe047,
 	swap_horiz = 0xe8d4,
 	swap_vert = 0xe8d5,
 	sync = 0xe627,
+	tag = 0xe9ef,
+	terminal = 0xeb8e,
 	thumb_down = 0xe8db,
 	thumb_up = 0xe8dc,
 	timer = 0xe425,
 	toggle_off = 0xe9f5,
 	toggle_on = 0xe9f6,
+	touch_app = 0xe913,
 	tune = 0xe429,
 	upload = 0xf09b,
 	verified = 0xef76,
@@ -3435,6 +3509,7 @@ local CODEPOINTS = {
 	volume_off = 0xe04f,
 	volume_up = 0xe050,
 	warning = 0xe002,
+	widgets = 0xe1bd,
 	wifi = 0xe63e,
 	zoom_in = 0xe8ff,
 	zoom_out = 0xe900,
@@ -3456,6 +3531,9 @@ local FALLBACK_GLYPHS = {
 	chevron_right = "\u{203A}",
 	expand_more = "\u{2304}",
 	expand_less = "\u{2303}",
+	minimize = "\u{2212}",
+	menu = "\u{2261}",
+	done = "\u{2713}",
 }
 
 Icons.Codepoints = CODEPOINTS
@@ -3482,6 +3560,18 @@ function Icons.Glyph(name: string): string
 		return utf8.char(CODEPOINTS[name])
 	end
 	return FALLBACK_GLYPHS[name] or (CODEPOINTS[name] and utf8.char(CODEPOINTS[name])) or "?"
+end
+
+-- True when `name` renders as something meaningful right now (a real
+-- Material glyph with the font set, or a plain fallback character).
+function Icons.CanRender(name: string): boolean
+	return (iconFont ~= nil and CODEPOINTS[name] ~= nil) or FALLBACK_GLYPHS[name] ~= nil
+end
+
+-- Adds (or overrides) a glyph by codepoint, e.g. one from the official
+-- MaterialIcons-Regular.codepoints file that isn't in the table above.
+function Icons.Register(name: string, codepoint: number)
+	CODEPOINTS[name] = codepoint
 end
 
 -- Applies the icon glyph + matching font onto a Text object in one call.
@@ -3907,6 +3997,257 @@ end
 return Typography
 end
 
+-- Executor/Env.lua
+loaders[newNode("Env", N_Executor)] = function(script, require)
+--[[
+	Executor environment shims. Script executors expose non-standard globals
+	(gethui, writefile, getcustomasset, ...) whose names and availability
+	differ per executor; everything here degrades gracefully when a function
+	is missing, so the library still runs in plain Roblox Studio/LocalScripts.
+
+	local Env = MD3.Env
+	Env.GetGuiParent()          -- gethui() > CoreGui > PlayerGui
+	Env.WriteFile("MyHub/a.txt", "hi")
+	Env.HttpGet(url)
+]]
+local Players = game:GetService("Players")
+
+local Env = {}
+
+-- Executor globals are read through the chunk's environment; in normal
+-- Roblox these are simply nil.
+local gethui_ = gethui or get_hidden_gui
+local protectGui = (syn and syn.protect_gui) or protect_gui or protectgui
+local writefile_ = writefile
+local readfile_ = readfile
+local isfile_ = isfile
+local isfolder_ = isfolder
+local makefolder_ = makefolder
+local listfiles_ = listfiles
+local delfile_ = delfile
+local getcustomasset_ = getcustomasset or getsynasset
+local setclipboard_ = setclipboard or toclipboard or set_clipboard
+local request_ = (syn and syn.request) or (http and http.request) or http_request or request
+local identifyexecutor_ = identifyexecutor or getexecutorname
+
+local function try(fn, ...)
+	if type(fn) ~= "function" then
+		return false, "unsupported"
+	end
+	return pcall(fn, ...)
+end
+
+do
+	local ok, name = try(identifyexecutor_)
+	Env.Name = ok and tostring(name) or nil
+end
+Env.IsExecutor = Env.Name ~= nil or type(getgenv) == "function"
+Env.CanUseFiles = type(writefile_) == "function" and type(readfile_) == "function" and type(isfile_) == "function"
+Env.CanUseCustomAssets = Env.CanUseFiles and type(getcustomasset_) == "function"
+
+-- Shared table that survives re-executing a script (getgenv), used to find
+-- and replace windows created by a previous run of the same script.
+function Env.Registry(): { [any]: any }
+	local ok, genv = try(getgenv)
+	local root = (ok and type(genv) == "table" and genv) or shared or _G
+	root.__MD3 = root.__MD3 or {}
+	return root.__MD3
+end
+
+-- Best container for executor UIs: a hidden UI root when the executor has
+-- one, then CoreGui (needs elevated identity), then the player's PlayerGui.
+function Env.GetGuiParent(): Instance
+	local ok, hui = try(gethui_)
+	if ok and typeof(hui) == "Instance" then
+		return hui
+	end
+	local coreOk, coreGui = pcall(function()
+		local core = game:GetService("CoreGui")
+		-- Parenting into CoreGui is what fails without elevated identity,
+		-- so that's the thing to test.
+		local probe = Instance.new("Folder")
+		probe.Parent = core
+		probe:Destroy()
+		return core
+	end)
+	if coreOk and coreGui then
+		return coreGui
+	end
+	local player = Players.LocalPlayer
+	return player:FindFirstChildOfClass("PlayerGui") or player:WaitForChild("PlayerGui")
+end
+
+function Env.ProtectGui(gui: Instance)
+	try(protectGui, gui)
+end
+
+-- A random, unremarkable instance name so scripts in the game can't find
+-- the UI by searching for a fixed name.
+function Env.RandomName(): string
+	local chars = table.create(12)
+	for i = 1, 12 do
+		chars[i] = string.char(math.random(97, 122))
+	end
+	return table.concat(chars)
+end
+
+--== Files ==--
+
+function Env.IsFile(path: string): boolean
+	local ok, result = try(isfile_, path)
+	return ok and result == true
+end
+
+function Env.IsFolder(path: string): boolean
+	local ok, result = try(isfolder_, path)
+	return ok and result == true
+end
+
+function Env.ReadFile(path: string): string?
+	if not Env.IsFile(path) then
+		return nil
+	end
+	local ok, content = try(readfile_, path)
+	return ok and content or nil
+end
+
+function Env.WriteFile(path: string, content: string): boolean
+	local ok = try(writefile_, path, content)
+	return ok
+end
+
+function Env.DeleteFile(path: string): boolean
+	local ok = try(delfile_, path)
+	return ok
+end
+
+-- Creates every folder along `path` ("A/B/C").
+function Env.MakeFolder(path: string)
+	local current = ""
+	for part in string.gmatch(path, "[^/\\]+") do
+		current = current == "" and part or `{current}/{part}`
+		if not Env.IsFolder(current) then
+			try(makefolder_, current)
+		end
+	end
+end
+
+function Env.ListFiles(path: string): { string }
+	local ok, files = try(listfiles_, path)
+	return ok and type(files) == "table" and files or {}
+end
+
+--== Web / misc ==--
+
+function Env.HttpGet(url: string): string?
+	local ok, body = pcall(function()
+		return game:HttpGet(url)
+	end)
+	if ok and type(body) == "string" then
+		return body
+	end
+	local reqOk, response = try(request_, { Url = url, Method = "GET" })
+	if reqOk and type(response) == "table" and type(response.Body) == "string" then
+		return response.Body
+	end
+	return nil
+end
+
+function Env.GetCustomAsset(path: string): string?
+	local ok, asset = try(getcustomasset_, path)
+	return ok and asset or nil
+end
+
+function Env.SetClipboard(text: string): boolean
+	local ok = try(setclipboard_, text)
+	return ok
+end
+
+return Env
+end
+
+-- Executor/IconFont.lua
+loaders[newNode("IconFont", N_Executor)] = function(script, require)
+--[[
+	Loads Google's Material Icons font at runtime on executors, so real
+	Material glyphs render without uploading a Font asset first.
+
+	Downloads MaterialIcons-Regular.ttf (Apache-2.0, google/material-design-icons)
+	once into the executor workspace, wraps it in a Roblox font-family JSON,
+	and loads that through getcustomasset. Needs writefile/readfile +
+	getcustomasset; returns nil (and leaves the plain-glyph fallbacks in
+	place) when the executor lacks them.
+
+	local font = MD3.IconFont.Load()   -- also calls MD3.Icons.SetFont(font)
+]]
+local HttpService = game:GetService("HttpService")
+
+local Root = script.Parent.Parent
+local Env = require(Root.Executor.Env)
+local Icons = require(Root.Core.Icons)
+
+local IconFont = {}
+
+IconFont.Url = "https://raw.githubusercontent.com/google/material-design-icons/master/font/MaterialIcons-Regular.ttf"
+
+local loaded: Font? = nil
+
+function IconFont.Load(folder: string?): (Font?, string?)
+	if loaded then
+		return loaded
+	end
+	if not Env.CanUseCustomAssets then
+		return nil, "executor has no writefile/getcustomasset"
+	end
+
+	folder = folder or "MD3"
+	Env.MakeFolder(folder)
+	local ttfPath = `{folder}/MaterialIcons-Regular.ttf`
+	local familyPath = `{folder}/MaterialIcons.json`
+
+	if not Env.IsFile(ttfPath) then
+		local data = Env.HttpGet(IconFont.Url)
+		-- The real font is ~350 KB; anything tiny is an error page.
+		if not data or #data < 10000 then
+			return nil, "could not download the icon font"
+		end
+		if not Env.WriteFile(ttfPath, data) then
+			return nil, "could not write the icon font"
+		end
+	end
+
+	local ttfAsset = Env.GetCustomAsset(ttfPath)
+	if not ttfAsset then
+		return nil, "getcustomasset failed for the icon font"
+	end
+
+	-- The asset id getcustomasset hands out can change between sessions, so
+	-- the family file is rewritten every time.
+	local family = HttpService:JSONEncode({
+		name = "MaterialIcons",
+		faces = { { name = "Regular", weight = 400, style = "normal", assetId = ttfAsset } },
+	})
+	if not Env.WriteFile(familyPath, family) then
+		return nil, "could not write the font family file"
+	end
+	local familyAsset = Env.GetCustomAsset(familyPath)
+	if not familyAsset then
+		return nil, "getcustomasset failed for the font family"
+	end
+
+	local ok, font = pcall(Font.new, familyAsset, Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+	if not ok then
+		return nil, tostring(font)
+	end
+
+	loaded = font
+	Icons.SetFont(font)
+	return font
+end
+
+return IconFont
+end
+
 -- Util/Color.lua
 loaders[newNode("Color", N_Util)] = function(script, require)
 -- Color math used to build Material 3 tonal palettes from a single seed color.
@@ -4129,12 +4470,2850 @@ end
 return Signal
 end
 
+-- Window/Config.lua
+loaders[newNode("Config", N_Window)] = function(script, require)
+-- (De)serializes flag values to JSON for config files. JSON has no Color3
+-- or EnumItem, so those are wrapped in small tagged tables.
+local HttpService = game:GetService("HttpService")
+
+local Config = {}
+
+function Config.Serialize(value)
+	local t = typeof(value)
+	if t == "Color3" then
+		return { __type = "Color3", hex = value:ToHex() }
+	elseif t == "EnumItem" then
+		return { __type = "EnumItem", enum = tostring(value.EnumType), name = value.Name }
+	elseif t == "table" then
+		local out = {}
+		for k, v in value do
+			out[k] = Config.Serialize(v)
+		end
+		return out
+	end
+	return value
+end
+
+function Config.Deserialize(value)
+	if type(value) ~= "table" then
+		return value
+	end
+	if value.__type == "Color3" then
+		return Color3.fromHex(value.hex)
+	elseif value.__type == "EnumItem" then
+		local ok, item = pcall(function()
+			return (Enum :: any)[value.enum][value.name]
+		end)
+		return ok and item or nil
+	end
+	local out = {}
+	for k, v in value do
+		out[k] = Config.Deserialize(v)
+	end
+	return out
+end
+
+-- flags: { [flagName] = element } -> JSON string of every element's value
+function Config.Encode(flags): string
+	local data = {}
+	for flag, element in flags do
+		if element.Save ~= false then
+			data[flag] = Config.Serialize(element.Value)
+		end
+	end
+	return HttpService:JSONEncode(data)
+end
+
+function Config.Decode(json: string): { [string]: any }?
+	local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
+	if not ok or type(data) ~= "table" then
+		return nil
+	end
+	local out = {}
+	for flag, value in data do
+		out[flag] = Config.Deserialize(value)
+	end
+	return out
+end
+
+return Config
+end
+
+-- Window/Container.lua
+loaders[newNode("Container", N_Window)] = function(script, require)
+-- Mixin giving Tabs and Sections the same element API:
+--   AddButton / AddToggle / AddSlider / AddInput / AddDropdown / AddKeybind /
+--   AddColorPicker / AddLabel / AddParagraph / AddDivider
+-- Each also has a Create* alias (CreateToggle, ...) for scripts written
+-- against other executor UI libraries.
+local Elements = script.Parent.Elements
+local Text = require(Elements.Text)
+
+local BUILDERS = {
+	Button = require(Elements.Button),
+	Toggle = require(Elements.Toggle),
+	Slider = require(Elements.Slider),
+	Input = require(Elements.Input),
+	Dropdown = require(Elements.Dropdown),
+	Keybind = require(Elements.Keybind),
+	ColorPicker = require(Elements.ColorPicker),
+	Label = Text.Label,
+	Paragraph = Text.Paragraph,
+	Divider = Text.Divider,
+}
+
+local ALIASES = {
+	Textbox = "Input",
+	TextBox = "Input",
+	Bind = "Keybind",
+	Colorpicker = "ColorPicker",
+}
+
+local Container = {}
+
+function Container.extend(class)
+	for name, builder in BUILDERS do
+		local function add(self, props)
+			local element = builder(self, props or {})
+			table.insert(self._elements, element)
+			return element
+		end
+		class["Add" .. name] = add
+		class["Create" .. name] = add
+	end
+	for alias, target in ALIASES do
+		class["Add" .. alias] = class["Add" .. target]
+		class["Create" .. alias] = class["Add" .. target]
+	end
+
+	function class:_nextOrder()
+		self._order += 1
+		return self._order
+	end
+end
+
+return Container
+end
+
+-- Window/Elements/Base.lua
+loaders[newNode("Base", N_Window_Elements)] = function(script, require)
+-- Shared plumbing for executor-window elements: the common element object
+-- (Value / Set / Get / Flag / Callback), the M3 list-item row every element
+-- is laid out in, and small glyph/state-layer helpers.
+local Root = script.Parent.Parent.Parent
+local Create = require(Root.Util.Create)
+local Maid = require(Root.Util.Maid)
+local Signal = require(Root.Util.Signal)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+local StateLayer = require(Root.Core.StateLayer)
+local Ripple = require(Root.Core.Ripple)
+local Icons = require(Root.Core.Icons)
+
+local Base = {}
+
+local Element = {}
+Element.__index = Element
+Base.ElementClass = Element
+
+function Base.Element(container, props, kind: string)
+	local window = container._window
+	local self = setmetatable({
+		Type = kind,
+		Flag = props.Flag,
+		Value = nil,
+		Changed = Signal.new(),
+		_window = window,
+		_container = container,
+		_maid = Maid.new(),
+		_callback = props.Callback,
+	}, Element)
+	return self
+end
+
+function Element:Get()
+	return self.Value
+end
+
+-- Sets the value, updates the visuals and (unless `silent`) fires Changed
+-- and the element's Callback — same path as a user interaction.
+function Element:Set(value, silent: boolean?)
+	if self._normalize then
+		value = self._normalize(value)
+	end
+	self.Value = value
+	if self._render then
+		self._render(value)
+	end
+	if not silent then
+		self:_emit(value)
+	end
+end
+
+function Element:_emit(...)
+	self.Changed:Fire(...)
+	if self._callback then
+		self._window:_call(self._callback, ...)
+	end
+end
+
+function Element:OnChanged(fn)
+	return self.Changed:Connect(fn)
+end
+
+function Element:SetCallback(fn)
+	self._callback = fn
+end
+
+function Element:SetVisible(visible: boolean)
+	self.Instance.Visible = visible
+end
+
+function Element:SetTitle(text: string)
+	if self._title then
+		self._title.Text = text
+	end
+end
+
+function Element:SetDescription(text: string?)
+	if self._desc then
+		self._desc.Text = text or ""
+		self._desc.Visible = (text or "") ~= ""
+	end
+end
+
+function Element:Destroy()
+	if self.Flag and self._window.Flags[self.Flag] == self then
+		self._window.Flags[self.Flag] = nil
+	end
+	self._maid:Destroy()
+	self.Changed:DisconnectAll()
+	if self.Instance then
+		self.Instance:Destroy()
+	end
+end
+
+-- Registers the element under its Flag (if any) and returns it.
+function Base.Finish(element)
+	if element.Flag then
+		element._window.Flags[element.Flag] = element
+	end
+	return element
+end
+
+-- A Material icon glyph as a TextLabel; hidden when neither the icon font
+-- nor a fallback character can draw it.
+function Base.Glyph(themer, name: string, size: number, role, parent: Instance?)
+	local label = Create("TextLabel") {
+		Name = "Icon",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(size, size),
+		TextSize = size,
+		Font = Enum.Font.GothamMedium,
+		Visible = Icons.CanRender(name),
+		Parent = parent,
+	}
+	Icons.Apply(label, name)
+	if role then
+		themer:Bind(label, { TextColor3 = role })
+	end
+	return label
+end
+
+--[[
+	Lays out an M3 list item:
+
+	┌──────────────────────────────────────────────┐
+	│ Title                              [control] │  <- Header
+	│ Description                                  │
+	│ [extra content, e.g. slider / dropdown list] │  <- :Extra()
+	└──────────────────────────────────────────────┘
+
+	opts.ClassName: "Frame" | "TextButton" (whole row clickable)
+	opts.ControlWidth / opts.ControlHeight: size of the right-hand slot
+]]
+function Base.Row(element, props, opts)
+	opts = opts or {}
+	local container = element._container
+	local themer = element._window._themer
+	local controlWidth = opts.ControlWidth or 0
+	local controlHeight = opts.ControlHeight or 0
+
+	local frame = Create(opts.ClassName or "Frame") {
+		Name = props.Title or element.Type,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = container:_nextOrder(),
+	}
+	if frame:IsA("TextButton") then
+		frame.AutoButtonColor = false
+		frame.Text = ""
+		frame.ClipsDescendants = true -- keeps ripples inside the rounded row
+	end
+	Shape.Corner(Shape.Medium, frame)
+	themer:Bind(frame, { BackgroundColor3 = "SurfaceContainerHigh" })
+
+	-- Padding + list layout live on an inner frame so overlays parented to
+	-- the row itself (state layer, ripples) aren't pulled into the layout.
+	local body = Create("Frame") {
+		Name = "Body",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		[1] = Create("UIPadding") {
+			PaddingTop = UDim.new(0, 10),
+			PaddingBottom = UDim.new(0, 10),
+			PaddingLeft = UDim.new(0, 16),
+			PaddingRight = UDim.new(0, 12),
+		},
+		[2] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 8),
+		},
+		Parent = frame,
+	}
+
+	local header = Create("Frame") {
+		Name = "Header",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, math.max(controlHeight, 24)),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 1,
+		Parent = body,
+	}
+	Create("UIListLayout") {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 12),
+		Parent = header,
+	}
+
+	local text = Create("Frame") {
+		Name = "Text",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, controlWidth > 0 and -(controlWidth + 12) or 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 1,
+		Parent = header,
+	}
+	Create("UIListLayout") {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 2),
+		Parent = text,
+	}
+
+	local title = Create("TextLabel") {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Text = props.Title or props.Name or "",
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = 1,
+		Parent = text,
+	}
+	Typography.Apply(title, "BodyLarge")
+	themer:Bind(title, { TextColor3 = "OnSurface" })
+
+	local descText = props.Description or props.Desc or props.Content or ""
+	local desc = Create("TextLabel") {
+		Name = "Description",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Text = descText,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Visible = descText ~= "",
+		LayoutOrder = 2,
+		Parent = text,
+	}
+	Typography.Apply(desc, "BodyMedium")
+	themer:Bind(desc, { TextColor3 = "OnSurfaceVariant" })
+
+	local control = nil
+	if controlWidth > 0 then
+		control = Create("Frame") {
+			Name = "Control",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(controlWidth, controlHeight),
+			LayoutOrder = 2,
+			Parent = header,
+		}
+	end
+
+	element.Instance = frame
+	element._title = title
+	element._desc = desc
+	frame.Parent = container._holder
+
+	local row = { Frame = frame, Body = body, Header = header, Control = control, Title = title, Description = desc }
+
+	-- Lazily creates the full-width area under the header.
+	function row.Extra(visible: boolean?)
+		if not row._extra then
+			row._extra = Create("Frame") {
+				Name = "Extra",
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				Visible = visible ~= false,
+				LayoutOrder = 2,
+				Parent = body,
+			}
+		end
+		return row._extra
+	end
+
+	return row
+end
+
+-- Hover/press state layer + ripple for a clickable surface.
+function Base.Interactive(element, button: GuiButton, role: string?)
+	local theme = element._window.Theme
+	local layer = StateLayer.new(button, theme.Colors[role or "OnSurface"], Shape.Medium)
+	element._maid:GiveTask(layer)
+	element._maid:GiveTask(theme.Changed:Connect(function()
+		layer:SetColor(theme.Colors[role or "OnSurface"])
+	end))
+	element._maid:GiveTask(button.MouseEnter:Connect(function()
+		layer:SetState("Hover", true)
+	end))
+	element._maid:GiveTask(button.MouseLeave:Connect(function()
+		layer:SetState("Hover", false)
+		layer:SetState("Pressed", false)
+	end))
+	element._maid:GiveTask(button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			layer:SetState("Pressed", true)
+			Ripple.Emit(button, input.Position, theme.Colors[role or "OnSurface"])
+		end
+	end))
+	element._maid:GiveTask(button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			layer:SetState("Pressed", false)
+		end
+	end))
+	return layer
+end
+
+-- A small rounded input "field" used by Input / Dropdown / Slider value box.
+function Base.Field(themer, className: string, parent: Instance, size: UDim2)
+	local field = Create(className) {
+		Name = "Field",
+		BorderSizePixel = 0,
+		Size = size,
+		Text = "",
+		Parent = parent,
+	}
+	if field:IsA("TextButton") then
+		field.AutoButtonColor = false
+	end
+	Shape.Corner(Shape.Small, field)
+	themer:Bind(field, { BackgroundColor3 = "SurfaceContainerHighest" })
+	local stroke = Create("UIStroke") {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Thickness = 1,
+		Parent = field,
+	}
+	themer:Bind(stroke, { Color = "OutlineVariant" })
+	return field, stroke
+end
+
+return Base
+end
+
+-- Window/Elements/Button.lua
+loaders[newNode("Button", N_Window_Elements)] = function(script, require)
+-- Tab:AddButton({ Title = "Rejoin", Description = "...", Icon = "refresh", Callback = function() end })
+local Base = require(script.Parent.Base)
+
+return function(container, props)
+	local element = Base.Element(container, props, "Button")
+	local themer = element._window._themer
+	element.Flag = nil -- buttons hold no value to save
+
+	local row = Base.Row(element, props, { ClassName = "TextButton", ControlWidth = 24, ControlHeight = 24 })
+	Base.Glyph(themer, props.Icon or "chevron_right", 24, "OnSurfaceVariant", row.Control)
+	Base.Interactive(element, row.Frame)
+
+	element._maid:GiveTask(row.Frame.Activated:Connect(function()
+		element:_emit()
+	end))
+
+	-- Runs the callback as if the button was clicked.
+	function element:Fire()
+		self:_emit()
+	end
+
+	return Base.Finish(element)
+end
+end
+
+-- Window/Elements/ColorPicker.lua
+loaders[newNode("ColorPicker", N_Window_Elements)] = function(script, require)
+--[[
+	Tab:AddColorPicker({
+		Title = "ESP color",
+		Default = Color3.fromRGB(255, 80, 80),
+		Flag = "EspColor",
+		Callback = function(color) end,
+	})
+
+	Click the swatch to expand a saturation/value square, a hue bar and a
+	hex field.
+]]
+local UserInputService = game:GetService("UserInputService")
+
+local Root = script.Parent.Parent.Parent
+local Base = require(script.Parent.Base)
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+
+local PICKER_HEIGHT = 128
+local HUE_WIDTH = 16
+
+local function isPress(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function isMove(input)
+	return input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch
+end
+
+return function(container, props)
+	local element = Base.Element(container, props, "ColorPicker")
+	local window = element._window
+	local themer = window._themer
+
+	local function normalize(value)
+		if typeof(value) == "Color3" then
+			return value
+		elseif type(value) == "string" then
+			local ok, color = pcall(Color3.fromHex, value)
+			if ok then
+				return color
+			end
+		end
+		return element.Value or Color3.new(1, 1, 1)
+	end
+
+	element.Value = normalize(props.Default or props.Value or props.Color)
+	local hue, sat, val = element.Value:ToHSV()
+
+	local row = Base.Row(element, props, { ClassName = "TextButton", ControlWidth = 44, ControlHeight = 28 })
+	Base.Interactive(element, row.Frame)
+
+	local swatch = Create("Frame") {
+		Name = "Swatch",
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = element.Value,
+		Parent = row.Control,
+	}
+	Shape.Corner(Shape.Small, swatch)
+	themer:Bind(Create("UIStroke") {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Thickness = 1,
+		Parent = swatch,
+	}, { Color = "Outline" })
+
+	local panel = row.Extra(false)
+	panel.Size = UDim2.new(1, 0, 0, PICKER_HEIGHT + 40)
+	panel.AutomaticSize = Enum.AutomaticSize.None
+
+	-- Saturation (x) / value (y) square: hue background, a white->clear
+	-- gradient left to right, then a clear->black gradient top to bottom.
+	local svBox = Create("TextButton") {
+		Name = "SaturationValue",
+		AutoButtonColor = false,
+		Text = "",
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, -(HUE_WIDTH + 12), 0, PICKER_HEIGHT),
+		Parent = panel,
+	}
+	Shape.Corner(Shape.Small, svBox)
+	local whiteLayer = Create("Frame") {
+		Name = "Saturation",
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Parent = svBox,
+		[1] = Create("UIGradient") {
+			Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }),
+		},
+	}
+	Shape.Corner(Shape.Small, whiteLayer)
+	local blackLayer = Create("Frame") {
+		Name = "Value",
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Parent = svBox,
+		[1] = Create("UIGradient") {
+			Rotation = 90,
+			Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }),
+		},
+	}
+	Shape.Corner(Shape.Small, blackLayer)
+	local svCursor = Create("Frame") {
+		Name = "Cursor",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(14, 14),
+		BorderSizePixel = 0,
+		ZIndex = 3,
+		Parent = svBox,
+		[1] = Create("UICorner") { CornerRadius = UDim.new(1, 0) },
+		[2] = Create("UIStroke") { Color = Color3.new(1, 1, 1), Thickness = 2 },
+	}
+
+	local hueKeypoints = {}
+	for i = 0, 6 do
+		table.insert(hueKeypoints, ColorSequenceKeypoint.new(i / 6, Color3.fromHSV((i / 6) % 1, 1, 1)))
+	end
+	local hueBar = Create("TextButton") {
+		Name = "Hue",
+		AutoButtonColor = false,
+		Text = "",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.fromOffset(HUE_WIDTH, PICKER_HEIGHT),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+		Parent = panel,
+		[1] = Create("UIGradient") { Rotation = 90, Color = ColorSequence.new(hueKeypoints) },
+	}
+	Shape.Corner(Shape.Full, hueBar)
+	local hueCursor = Create("Frame") {
+		Name = "Cursor",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.new(1, 6, 0, 6),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		BorderSizePixel = 0,
+		ZIndex = 3,
+		Parent = hueBar,
+		[1] = Create("UICorner") { CornerRadius = UDim.new(1, 0) },
+	}
+	themer:Bind(Create("UIStroke") { Thickness = 1, Parent = hueCursor }, { Color = "Outline" })
+
+	local hexBox = Base.Field(themer, "TextBox", panel, UDim2.fromOffset(120, 28))
+	hexBox.Position = UDim2.fromOffset(0, PICKER_HEIGHT + 10)
+	hexBox.ClearTextOnFocus = false
+	hexBox.TextXAlignment = Enum.TextXAlignment.Left
+	Typography.Apply(hexBox, "BodyMedium")
+	themer:Bind(hexBox, { TextColor3 = "OnSurface" })
+	Create("UIPadding") { PaddingLeft = UDim.new(0, 10), Parent = hexBox }
+
+	local rgbLabel = Create("TextLabel") {
+		Name = "RGB",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(132, PICKER_HEIGHT + 10),
+		Size = UDim2.new(1, -132, 0, 28),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	}
+	Typography.Apply(rgbLabel, "BodySmall")
+	themer:Bind(rgbLabel, { TextColor3 = "OnSurfaceVariant" })
+
+	local function paint()
+		local color = element.Value
+		swatch.BackgroundColor3 = color
+		svBox.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+		svCursor.BackgroundColor3 = color
+		svCursor.Position = UDim2.fromScale(sat, 1 - val)
+		hueCursor.Position = UDim2.fromScale(0.5, hue)
+		hexBox.Text = "#" .. color:ToHex():upper()
+		rgbLabel.Text = string.format(
+			"RGB %d, %d, %d",
+			math.round(color.R * 255),
+			math.round(color.G * 255),
+			math.round(color.B * 255)
+		)
+	end
+
+	local function commit()
+		element.Value = Color3.fromHSV(hue, sat, val)
+		paint()
+		element:_emit(element.Value)
+	end
+
+	element._normalize = normalize
+	element._render = function(color)
+		-- Keep the current hue for greys, where ToHSV can't recover one.
+		local h, s, v = color:ToHSV()
+		if s > 0 then
+			hue = h
+		end
+		sat, val = s, v
+		paint()
+	end
+
+	element._maid:GiveTask(row.Frame.Activated:Connect(function()
+		panel.Visible = not panel.Visible
+	end))
+
+	local dragging = nil
+	local function updateFrom(input)
+		if dragging == "sv" then
+			local pos, size = svBox.AbsolutePosition, svBox.AbsoluteSize
+			sat = math.clamp((input.Position.X - pos.X) / math.max(size.X, 1), 0, 1)
+			val = 1 - math.clamp((input.Position.Y - pos.Y) / math.max(size.Y, 1), 0, 1)
+		elseif dragging == "hue" then
+			local pos, size = hueBar.AbsolutePosition, hueBar.AbsoluteSize
+			hue = math.clamp((input.Position.Y - pos.Y) / math.max(size.Y, 1), 0, 0.999)
+		end
+		commit()
+	end
+
+	element._maid:GiveTask(svBox.InputBegan:Connect(function(input)
+		if isPress(input) then
+			dragging = "sv"
+			updateFrom(input)
+		end
+	end))
+	element._maid:GiveTask(hueBar.InputBegan:Connect(function(input)
+		if isPress(input) then
+			dragging = "hue"
+			updateFrom(input)
+		end
+	end))
+	element._maid:GiveTask(UserInputService.InputChanged:Connect(function(input)
+		if dragging and isMove(input) then
+			updateFrom(input)
+		end
+	end))
+	element._maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+		if isPress(input) then
+			dragging = nil
+		end
+	end))
+	element._maid:GiveTask(hexBox.FocusLost:Connect(function()
+		local ok, color = pcall(Color3.fromHex, (hexBox.Text:gsub("[^%x]", "")))
+		if ok then
+			element:Set(color)
+		else
+			paint()
+		end
+	end))
+
+	paint()
+	return Base.Finish(element)
+end
+end
+
+-- Window/Elements/Dropdown.lua
+loaders[newNode("Dropdown", N_Window_Elements)] = function(script, require)
+--[[
+	Tab:AddDropdown({
+		Title = "Weapon",
+		Options = { "Sword", "Bow", "Staff" },
+		Default = "Sword",          -- Multi: a list, e.g. { "Sword", "Bow" }
+		Multi = false,
+		Searchable = nil,           -- defaults to true when there are > 8 options
+		Flag = "Weapon",
+		Callback = function(value) end, -- Multi: receives a list
+	})
+
+	dropdown:SetOptions({ ... })   -- replace the option list (e.g. player names)
+]]
+local TweenService = game:GetService("TweenService")
+
+local Root = script.Parent.Parent.Parent
+local Base = require(script.Parent.Base)
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+local Motion = require(Root.Core.Motion)
+local Icons = require(Root.Core.Icons)
+
+local ITEM_HEIGHT = 32
+local MAX_LIST_HEIGHT = 6 * (ITEM_HEIGHT + 2)
+
+return function(container, props)
+	local element = Base.Element(container, props, "Dropdown")
+	local window = element._window
+	local themer = window._themer
+	local theme = window.Theme
+	local multi = props.Multi == true or props.MultipleOptions == true
+
+	local options = {}
+	local items = {} -- option -> { Button, Label, Check }
+	local open = false
+
+	local function normalize(value)
+		if multi then
+			local list = {}
+			if type(value) == "table" then
+				for key, v in value do
+					-- accept both { "A", "B" } and { A = true, B = true }
+					if type(key) == "number" then
+						table.insert(list, v)
+					elseif v == true then
+						table.insert(list, key)
+					end
+				end
+			elseif value ~= nil then
+				list = { value }
+			end
+			return list
+		end
+		if type(value) == "table" then
+			return value[1]
+		end
+		return value
+	end
+
+	local function isSelected(option)
+		if multi then
+			return table.find(element.Value, option) ~= nil
+		end
+		return element.Value == option
+	end
+
+	local function copyValue()
+		return multi and table.clone(element.Value) or element.Value
+	end
+
+	element.Value = normalize(props.Default or props.Value or props.CurrentOption)
+
+	local row = Base.Row(element, props, { ControlWidth = 170, ControlHeight = 32 })
+
+	local field = Base.Field(themer, "TextButton", row.Control, UDim2.fromScale(1, 1))
+	local fieldLabel = Create("TextLabel") {
+		Name = "Value",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(10, 0),
+		Size = UDim2.new(1, -40, 1, 0),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = field,
+	}
+	Typography.Apply(fieldLabel, "BodyMedium")
+
+	local arrow = Base.Glyph(themer, "expand_more", 20, "OnSurfaceVariant", field)
+	arrow.AnchorPoint = Vector2.new(1, 0.5)
+	arrow.Position = UDim2.new(1, -8, 0.5, 0)
+
+	-- Inline menu under the header (inline instead of a floating popup so it
+	-- scrolls with the page and never gets clipped by the window).
+	local panel = row.Extra(false)
+	Create("UIListLayout") {
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+		Parent = panel,
+	}
+
+	local search = nil
+	local searchable = props.Searchable
+	if searchable == nil then
+		searchable = #(props.Options or props.Values or {}) > 8
+	end
+	if searchable then
+		search = Base.Field(themer, "TextBox", panel, UDim2.new(1, 0, 0, 32))
+		search.LayoutOrder = 1
+		search.ClearTextOnFocus = false
+		search.PlaceholderText = "Search..."
+		search.TextXAlignment = Enum.TextXAlignment.Left
+		Typography.Apply(search, "BodyMedium")
+		themer:Bind(search, { TextColor3 = "OnSurface", PlaceholderColor3 = "OnSurfaceVariant" })
+		Create("UIPadding") { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = search }
+	end
+
+	local list = Create("ScrollingFrame") {
+		Name = "Options",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 0),
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 3,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+		LayoutOrder = 2,
+		Parent = panel,
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 2),
+		},
+	}
+	themer:Bind(list, { ScrollBarImageColor3 = "Outline" })
+
+	local function displayText()
+		if multi then
+			return #element.Value > 0 and table.concat(element.Value, ", ") or (props.Placeholder or "None")
+		end
+		return element.Value ~= nil and tostring(element.Value) or (props.Placeholder or "Select...")
+	end
+
+	local function paint()
+		local c = theme.Colors
+		fieldLabel.Text = displayText()
+		fieldLabel.TextColor3 = (multi and #element.Value > 0 or not multi and element.Value ~= nil) and c.OnSurface
+			or c.OnSurfaceVariant
+		for option, item in items do
+			local selected = isSelected(option)
+			item.Button.BackgroundColor3 = c.SecondaryContainer
+			item.Button.BackgroundTransparency = selected and 0 or 1
+			item.Label.TextColor3 = selected and c.OnSecondaryContainer or c.OnSurface
+			item.Check.TextColor3 = c.OnSecondaryContainer
+			item.Check.Visible = selected and Icons.CanRender("check")
+		end
+	end
+
+	local function layoutList()
+		local query = search and search.Text:lower() or ""
+		local shown = 0
+		for option, item in items do
+			local visible = query == "" or tostring(option):lower():find(query, 1, true) ~= nil
+			item.Button.Visible = visible
+			if visible then
+				shown += 1
+			end
+		end
+		list.Size = UDim2.new(1, 0, 0, math.min(shown * (ITEM_HEIGHT + 2), MAX_LIST_HEIGHT))
+	end
+
+	local function select(option)
+		if multi then
+			local index = table.find(element.Value, option)
+			if index then
+				table.remove(element.Value, index)
+			else
+				table.insert(element.Value, option)
+			end
+		else
+			element.Value = option
+		end
+		paint()
+		element:_emit(copyValue())
+	end
+
+	local function setOpen(value: boolean)
+		open = value
+		panel.Visible = value
+		TweenService:Create(arrow, Motion.Standard(Motion.Duration.Short3), { Rotation = value and 180 or 0 }):Play()
+		if value then
+			layoutList()
+		end
+	end
+
+	local function buildItems()
+		for _, item in items do
+			item.Button:Destroy()
+		end
+		table.clear(items)
+		for index, option in options do
+			local item = Create("TextButton") {
+				Name = tostring(option),
+				AutoButtonColor = false,
+				Text = "",
+				BorderSizePixel = 0,
+				Size = UDim2.new(1, 0, 0, ITEM_HEIGHT),
+				LayoutOrder = index,
+				Parent = list,
+			}
+			Shape.Corner(Shape.Small, item)
+			local label = Create("TextLabel") {
+				Name = "Label",
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(12, 0),
+				Size = UDim2.new(1, -44, 1, 0),
+				Text = tostring(option),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Parent = item,
+			}
+			Typography.Apply(label, "BodyMedium")
+			local check = Base.Glyph(themer, "check", 18, nil, item)
+			check.AnchorPoint = Vector2.new(1, 0.5)
+			check.Position = UDim2.new(1, -10, 0.5, 0)
+
+			item.Activated:Connect(function()
+				select(option)
+				if not multi then
+					setOpen(false)
+				end
+			end)
+			items[option] = { Button = item, Label = label, Check = check }
+		end
+		paint()
+		if open then
+			layoutList()
+		end
+	end
+
+	element._normalize = normalize
+	element._render = paint
+
+	-- Replaces the option list. Selections that no longer exist are dropped.
+	function element:SetOptions(newOptions)
+		options = table.clone(newOptions or {})
+		if multi then
+			for i = #self.Value, 1, -1 do
+				if not table.find(options, self.Value[i]) then
+					table.remove(self.Value, i)
+				end
+			end
+		elseif self.Value ~= nil and not table.find(options, self.Value) then
+			self.Value = nil
+		end
+		buildItems()
+	end
+	element.Refresh = element.SetOptions
+
+	function element:GetOptions()
+		return table.clone(options)
+	end
+
+	function element:Open()
+		setOpen(true)
+	end
+
+	function element:Close()
+		setOpen(false)
+	end
+
+	element._maid:GiveTask(field.Activated:Connect(function()
+		setOpen(not open)
+	end))
+	if search then
+		element._maid:GiveTask(search:GetPropertyChangedSignal("Text"):Connect(layoutList))
+	end
+	element._maid:GiveTask(theme.Changed:Connect(paint))
+
+	options = table.clone(props.Options or props.Values or {})
+	buildItems()
+
+	return Base.Finish(element)
+end
+end
+
+-- Window/Elements/Input.lua
+loaders[newNode("Input", N_Window_Elements)] = function(script, require)
+--[[
+	Tab:AddInput({
+		Title = "Target player",
+		Placeholder = "Username",
+		Default = "",
+		Numeric = false,        -- only allow number characters
+		Finished = true,        -- fire on focus lost (false = on every keystroke)
+		ClearOnSubmit = false,  -- empty the box after firing
+		Flag = "Target",
+		Callback = function(text) end,
+	})
+]]
+local TweenService = game:GetService("TweenService")
+
+local Root = script.Parent.Parent.Parent
+local Base = require(script.Parent.Base)
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Motion = require(Root.Core.Motion)
+
+return function(container, props)
+	local element = Base.Element(container, props, "Input")
+	local window = element._window
+	local themer = window._themer
+	local numeric = props.Numeric == true
+	local finished = props.Finished ~= false
+
+	local function clean(text)
+		text = tostring(text or "")
+		if numeric then
+			text = text:gsub("[^%d%.%-]", "")
+		end
+		return text
+	end
+
+	element.Value = clean(props.Default or props.Value)
+
+	local row = Base.Row(element, props, { ControlWidth = 170, ControlHeight = 32 })
+	local field, stroke = Base.Field(themer, "TextBox", row.Control, UDim2.fromScale(1, 1))
+	field.ClearTextOnFocus = false
+	field.Text = element.Value
+	field.PlaceholderText = props.Placeholder or props.PlaceholderText or ""
+	field.TextXAlignment = Enum.TextXAlignment.Left
+	field.TextTruncate = Enum.TextTruncate.AtEnd
+	Typography.Apply(field, "BodyMedium")
+	themer:Bind(field, { TextColor3 = "OnSurface", PlaceholderColor3 = "OnSurfaceVariant" })
+	Create("UIPadding") {
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+		Parent = field,
+	}
+
+	element._normalize = clean
+	element._render = function(value)
+		field.Text = value
+	end
+
+	local function submit()
+		element.Value = field.Text
+		element:_emit(field.Text)
+		if props.ClearOnSubmit or props.RemoveTextAfterFocusLost then
+			field.Text = ""
+			element.Value = ""
+		end
+	end
+
+	element._maid:GiveTask(field:GetPropertyChangedSignal("Text"):Connect(function()
+		local cleaned = clean(field.Text)
+		if cleaned ~= field.Text then
+			field.Text = cleaned
+			return
+		end
+		-- Comparing against Value (instead of a "rendering" flag) also
+		-- holds under deferred signal behavior.
+		if not finished and cleaned ~= element.Value then
+			element.Value = cleaned
+			element:_emit(cleaned)
+		end
+	end))
+	element._maid:GiveTask(field.Focused:Connect(function()
+		themer:Bind(stroke, { Color = "Primary" })
+		TweenService:Create(stroke, Motion.Standard(Motion.Duration.Short2), { Thickness = 2 }):Play()
+	end))
+	element._maid:GiveTask(field.FocusLost:Connect(function()
+		themer:Bind(stroke, { Color = "OutlineVariant" })
+		TweenService:Create(stroke, Motion.Standard(Motion.Duration.Short2), { Thickness = 1 }):Play()
+		if finished then
+			submit()
+		end
+	end))
+
+	return Base.Finish(element)
+end
+end
+
+-- Window/Elements/Keybind.lua
+loaders[newNode("Keybind", N_Window_Elements)] = function(script, require)
+--[[
+	Tab:AddKeybind({
+		Title = "Dash",
+		Default = Enum.KeyCode.Q,   -- or "Q"
+		Mode = "Press",             -- "Press": Callback()  | "Toggle": Callback(on) | "Hold": Callback(isDown)
+		Flag = "DashKey",
+		Callback = function(...) end,
+		ChangedCallback = function(newKey) end, -- when the user rebinds
+	})
+
+	Click the chip, then press a key. Esc cancels, Backspace unbinds.
+	Keybinds don't fire while typing in a TextBox.
+]]
+local UserInputService = game:GetService("UserInputService")
+
+local Root = script.Parent.Parent.Parent
+local Base = require(script.Parent.Base)
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+
+local function toKeyCode(value)
+	if typeof(value) == "EnumItem" then
+		return value.EnumType == Enum.KeyCode and value ~= Enum.KeyCode.Unknown and value or nil
+	elseif type(value) == "string" and value ~= "" and value ~= "None" then
+		local ok, key = pcall(function()
+			return (Enum.KeyCode :: any)[value]
+		end)
+		return ok and key or nil
+	end
+	return nil
+end
+
+return function(container, props)
+	local element = Base.Element(container, props, "Keybind")
+	local window = element._window
+	local themer = window._themer
+	local mode = props.Mode or "Press"
+	local changedCallback = props.ChangedCallback
+	local listening = false
+
+	element.Value = toKeyCode(props.Default or props.Value or props.CurrentKeybind)
+	element.State = false -- Toggle mode: current on/off, Hold mode: held down
+
+	local row = Base.Row(element, props, { ControlWidth = 96, ControlHeight = 32 })
+
+	local chip = Create("TextButton") {
+		Name = "Key",
+		AutoButtonColor = false,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.fromScale(1, 0.5),
+		Size = UDim2.new(0, 0, 0, 32),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BorderSizePixel = 0,
+		Parent = row.Control,
+		[1] = Create("UIPadding") { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) },
+		[2] = Create("UISizeConstraint") { MinSize = Vector2.new(56, 32) },
+	}
+	Shape.Corner(Shape.Small, chip)
+	Typography.Apply(chip, "LabelLarge")
+
+	local function paint()
+		chip.Text = listening and "..." or (element.Value and element.Value.Name or "None")
+		themer:Bind(chip, {
+			BackgroundColor3 = listening and "PrimaryContainer" or "SecondaryContainer",
+			TextColor3 = listening and "OnPrimaryContainer" or "OnSecondaryContainer",
+		})
+	end
+
+	element._normalize = toKeyCode
+	element._render = paint
+	-- A keybind's "value changed" is a rebind, so Set() reports through
+	-- ChangedCallback; Callback is reserved for the key actually being used.
+	function element:_emit(key)
+		self.Changed:Fire(key)
+		if changedCallback then
+			window:_call(changedCallback, key)
+		end
+	end
+
+	function element:SetChangedCallback(fn)
+		changedCallback = fn
+	end
+
+	local function fire(...)
+		if element._callback then
+			window:_call(element._callback, ...)
+		end
+	end
+
+	local function setListening(value: boolean)
+		listening = value
+		window._keybindListening = value
+		paint()
+	end
+
+	element._maid:GiveTask(chip.Activated:Connect(function()
+		setListening(not listening)
+	end))
+
+	element._maid:GiveTask(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if listening then
+			if input.UserInputType ~= Enum.UserInputType.Keyboard then
+				return
+			end
+			-- Marks this input as consumed so the window toggle and other
+			-- keybinds (whose handlers may run after this one) ignore it.
+			window._capturedKey = input.KeyCode
+			window._capturedAt = os.clock()
+			setListening(false)
+			if input.KeyCode == Enum.KeyCode.Escape then
+				paint()
+			elseif input.KeyCode == Enum.KeyCode.Backspace then
+				element:Set(nil)
+			else
+				element:Set(input.KeyCode)
+			end
+			return
+		end
+
+		if gameProcessed or UserInputService:GetFocusedTextBox() or window:_isCapturingKey(input) then
+			return
+		end
+		if element.Value and input.KeyCode == element.Value then
+			if mode == "Toggle" then
+				element.State = not element.State
+				fire(element.State)
+			elseif mode == "Hold" then
+				element.State = true
+				fire(true)
+			else
+				fire()
+			end
+		end
+	end))
+
+	if mode == "Hold" then
+		element._maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+			if element.State and element.Value and input.KeyCode == element.Value then
+				element.State = false
+				fire(false)
+			end
+		end))
+	end
+
+	paint()
+	return Base.Finish(element)
+end
+end
+
+-- Window/Elements/Slider.lua
+loaders[newNode("Slider", N_Window_Elements)] = function(script, require)
+-- Tab:AddSlider({ Title = "WalkSpeed", Min = 16, Max = 200, Default = 16, Step = 1, Suffix = "", Flag = "WS", Callback = function(v) end })
+-- The value box on the right is editable: type a number and press Enter.
+local Root = script.Parent.Parent.Parent
+local Base = require(script.Parent.Base)
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Slider = require(Root.Components.Slider)
+
+return function(container, props)
+	local element = Base.Element(container, props, "Slider")
+	local window = element._window
+	local themer = window._themer
+
+	local min = props.Min or 0
+	local max = props.Max or 100
+	local step = props.Step or props.Increment or props.Rounding or 1
+	local suffix = props.Suffix or ""
+	local decimals = step > 0 and #(tostring(step):match("%.(%d+)$") or "") or 2
+
+	local function snap(value)
+		value = tonumber(value) or min
+		if step > 0 then
+			value = math.round(value / step) * step
+		end
+		return math.clamp(value, min, max)
+	end
+	local function format(value)
+		return string.format(`%.{decimals}f`, value) .. suffix
+	end
+
+	element.Value = snap(props.Default or props.Value or min)
+
+	local row = Base.Row(element, props, { ControlWidth = 88, ControlHeight = 28 })
+
+	local box = Create("TextBox") {
+		Name = "Value",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ClearTextOnFocus = false,
+		Text = format(element.Value),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Parent = row.Control,
+	}
+	Typography.Apply(box, "TitleSmall")
+	themer:Bind(box, { TextColor3 = "Primary" })
+
+	local extra = row.Extra()
+	Create("UIPadding") {
+		PaddingLeft = UDim.new(0, 6),
+		PaddingRight = UDim.new(0, 6),
+		Parent = extra,
+	}
+	local slider = Slider.new({
+		Min = min,
+		Max = max,
+		Step = step > 0 and step or nil,
+		Value = element.Value,
+		Theme = window.Theme,
+		Size = UDim2.new(1, 0, 0, 28),
+		Parent = extra,
+	})
+	element._maid:GiveTask(slider)
+
+	element._normalize = snap
+	element._render = function(value)
+		slider:SetValue(value, true)
+		box.Text = format(value)
+	end
+
+	element._maid:GiveTask(slider.Changed:Connect(function(value)
+		value = snap(value)
+		element.Value = value
+		box.Text = format(value)
+		element:_emit(value)
+	end))
+	element._maid:GiveTask(box.FocusLost:Connect(function()
+		local typed = tonumber((box.Text:gsub("[^%d%.%-]", "")))
+		if typed then
+			element:Set(typed)
+		else
+			box.Text = format(element.Value)
+		end
+	end))
+
+	return Base.Finish(element)
+end
+end
+
+-- Window/Elements/Text.lua
+loaders[newNode("Text", N_Window_Elements)] = function(script, require)
+-- Non-interactive elements: Label, Paragraph, Divider.
+local Root = script.Parent.Parent.Parent
+local Base = require(script.Parent.Base)
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Divider = require(Root.Components.Divider)
+
+local Text = {}
+
+-- Tab:AddLabel("Some text") / Tab:AddLabel({ Text = "...", Color = "Primary" })
+function Text.Label(container, props)
+	if type(props) == "string" then
+		props = { Text = props }
+	end
+	local element = Base.Element(container, props, "Label")
+	local themer = element._window._themer
+	element.Flag = nil
+	element.Value = tostring(props.Text or props.Title or "")
+
+	local label = Create("TextLabel") {
+		Name = "Label",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Text = element.Value,
+		TextWrapped = true,
+		RichText = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = container:_nextOrder(),
+		[1] = Create("UIPadding") {
+			PaddingLeft = UDim.new(0, 4),
+			PaddingRight = UDim.new(0, 4),
+		},
+	}
+	Typography.Apply(label, "BodyMedium")
+	themer:Bind(label, { TextColor3 = props.Color or "OnSurfaceVariant" })
+	label.Parent = container._holder
+	element.Instance = label
+
+	element._normalize = tostring
+	element._render = function(value)
+		label.Text = value
+	end
+	element._emit = function() end
+
+	return element
+end
+
+-- Tab:AddParagraph({ Title = "Info", Content = "Longer text..." })
+function Text.Paragraph(container, props)
+	if type(props) == "string" then
+		props = { Title = props }
+	end
+	local element = Base.Element(container, props, "Paragraph")
+	element.Flag = nil
+	Base.Row(element, props, {})
+	element.Value = { Title = props.Title or "", Content = props.Content or props.Description or "" }
+
+	element._render = function(value)
+		element:SetTitle(value.Title or "")
+		element:SetDescription(value.Content or "")
+	end
+	element._emit = function() end
+
+	return element
+end
+
+-- Tab:AddDivider()
+function Text.Divider(container, props)
+	props = props or {}
+	local element = Base.Element(container, props, "Divider")
+	element.Flag = nil
+	local divider = Divider.new({ Theme = element._window.Theme })
+	divider.Instance.LayoutOrder = container:_nextOrder()
+	divider.Instance.Parent = container._holder
+	element._maid:GiveTask(divider)
+	element.Instance = divider.Instance
+	return element
+end
+
+return Text
+end
+
+-- Window/Elements/Toggle.lua
+loaders[newNode("Toggle", N_Window_Elements)] = function(script, require)
+-- Tab:AddToggle({ Title = "Auto farm", Default = false, Flag = "AutoFarm", Callback = function(on) end })
+local Root = script.Parent.Parent.Parent
+local Base = require(script.Parent.Base)
+local Switch = require(Root.Components.Switch)
+
+return function(container, props)
+	local element = Base.Element(container, props, "Toggle")
+	local window = element._window
+	element.Value = (props.Default or props.Value) == true
+
+	local row = Base.Row(element, props, { ClassName = "TextButton", ControlWidth = 52, ControlHeight = 32 })
+	Base.Interactive(element, row.Frame)
+
+	local switch = Switch.new({ Value = element.Value, Theme = window.Theme, Parent = row.Control })
+	element._maid:GiveTask(switch)
+	element._switch = switch
+
+	element._normalize = function(value)
+		return value == true
+	end
+	element._render = function(value)
+		switch:SetValue(value, true)
+	end
+
+	element._maid:GiveTask(switch.Changed:Connect(function(value)
+		element.Value = value
+		element:_emit(value)
+	end))
+	-- Clicking anywhere on the row flips the switch too.
+	element._maid:GiveTask(row.Frame.Activated:Connect(function()
+		switch:SetValue(not switch:GetValue())
+	end))
+
+	return Base.Finish(element)
+end
+end
+
+-- Window/Notifier.lua
+loaders[newNode("Notifier", N_Window)] = function(script, require)
+-- Stacked toast notifications for executor windows (bottom-right corner).
+-- Unlike Snackbar (one message at a time) these queue up and each carries
+-- its own title, text, icon and countdown bar.
+local TweenService = game:GetService("TweenService")
+
+local Root = script.Parent.Parent
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+local Motion = require(Root.Core.Motion)
+local Icons = require(Root.Core.Icons)
+
+local Notifier = {}
+Notifier.__index = Notifier
+
+local WIDTH = 300
+
+function Notifier.new(parent: Instance, themer)
+	local self = setmetatable({}, Notifier)
+	self._themer = themer
+	self._count = 0
+
+	self.Instance = Create("Frame") {
+		Name = "Notifications",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -16, 1, -16),
+		Size = UDim2.new(0, WIDTH, 1, -32),
+		BackgroundTransparency = 1,
+		ZIndex = 50,
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			VerticalAlignment = Enum.VerticalAlignment.Bottom,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 8),
+		},
+		Parent = parent,
+	}
+	return self
+end
+
+-- Notify({ Title = "Saved", Content = "Config written", Icon = "save", Duration = 5 })
+function Notifier:Notify(props)
+	if type(props) == "string" then
+		props = { Title = props }
+	end
+	local themer = self._themer
+	local duration = props.Duration or 5
+	self._count += 1
+
+	-- The slot takes part in the list layout; the card inside it slides.
+	local slot = Create("Frame") {
+		Name = "Notification",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = self._count,
+		ZIndex = 50,
+		Parent = self.Instance,
+	}
+
+	local card = Create("TextButton") {
+		Name = "Card",
+		AutoButtonColor = false,
+		Text = "",
+		Position = UDim2.new(1, 24, 0, 0),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		ZIndex = 50,
+		Parent = slot,
+	}
+	Shape.Corner(Shape.Medium, card)
+	themer:Bind(card, { BackgroundColor3 = "SurfaceContainerHighest" })
+	themer:Bind(Create("UIStroke") {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Thickness = 1,
+		Parent = card,
+	}, { Color = "OutlineVariant" })
+	Create("UIPadding") {
+		PaddingTop = UDim.new(0, 12),
+		PaddingBottom = UDim.new(0, 12),
+		PaddingLeft = UDim.new(0, 16),
+		PaddingRight = UDim.new(0, 16),
+		Parent = card,
+	}
+
+	local iconName = props.Icon or "notifications"
+	local hasIcon = props.Icon ~= false and Icons.CanRender(iconName)
+	if hasIcon then
+		local icon = Create("TextLabel") {
+			Name = "Icon",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(20, 20),
+			TextSize = 20,
+			Font = Enum.Font.GothamMedium,
+			ZIndex = 51,
+			Parent = card,
+		}
+		Icons.Apply(icon, iconName)
+		themer:Bind(icon, { TextColor3 = "Primary" })
+	end
+
+	local textColumn = Create("Frame") {
+		Name = "Text",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(hasIcon and 32 or 0, 0),
+		Size = UDim2.new(1, hasIcon and -32 or 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		ZIndex = 51,
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 2),
+		},
+		Parent = card,
+	}
+
+	local title = Create("TextLabel") {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Text = props.Title or "",
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = 1,
+		ZIndex = 51,
+		Parent = textColumn,
+	}
+	Typography.Apply(title, "TitleSmall")
+	themer:Bind(title, { TextColor3 = "OnSurface" })
+
+	if props.Content and props.Content ~= "" then
+		local body = Create("TextLabel") {
+			Name = "Content",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Text = props.Content,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = 2,
+			ZIndex = 51,
+			Parent = textColumn,
+		}
+		Typography.Apply(body, "BodyMedium")
+		themer:Bind(body, { TextColor3 = "OnSurfaceVariant" })
+	end
+
+	-- Countdown bar under the text (a layout item, so it can't feed back
+	-- into the card's automatic height).
+	local countdown = Create("Frame") {
+		Name = "Countdown",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 11),
+		LayoutOrder = 3,
+		ZIndex = 51,
+		Parent = textColumn,
+	}
+	local bar = Create("Frame") {
+		Name = "Bar",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 3),
+		BorderSizePixel = 0,
+		ZIndex = 52,
+		[1] = Create("UICorner") { CornerRadius = UDim.new(1, 0) },
+		Parent = countdown,
+	}
+	themer:Bind(bar, { BackgroundColor3 = "Primary" })
+
+	TweenService:Create(card, Motion.Emphasized(Motion.Duration.Medium2), { Position = UDim2.new() }):Play()
+	TweenService:Create(bar, TweenInfo.new(duration, Enum.EasingStyle.Linear), { Size = UDim2.new(0, 0, 0, 3) }):Play()
+
+	local closed = false
+	local function close()
+		if closed then
+			return
+		end
+		closed = true
+		local out = TweenService:Create(card, Motion.Accelerate(Motion.Duration.Short4), { Position = UDim2.new(1, 24, 0, 0) })
+		out:Play()
+		out.Completed:Once(function()
+			slot:Destroy()
+		end)
+	end
+
+	card.Activated:Connect(close)
+	task.delay(duration, close)
+
+	return { Close = close, Instance = slot }
+end
+
+function Notifier:Destroy()
+	self.Instance:Destroy()
+end
+
+return Notifier
+end
+
+-- Window/Tab.lua
+loaders[newNode("Tab", N_Window)] = function(script, require)
+-- A window tab (navigation-drawer item + scrolling page) and its Sections.
+-- Both expose the element API from Container (AddToggle, AddSlider, ...).
+local TweenService = game:GetService("TweenService")
+
+local Root = script.Parent.Parent
+local Create = require(Root.Util.Create)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+local Motion = require(Root.Core.Motion)
+local StateLayer = require(Root.Core.StateLayer)
+local Container = require(script.Parent.Container)
+local Base = require(script.Parent.Elements.Base)
+
+--== Section ==--
+
+local Section = {}
+Section.__index = Section
+Container.extend(Section)
+
+function Section.new(tab, title: string?)
+	local self = setmetatable({}, Section)
+	self._window = tab._window
+	self._tab = tab
+	self._order = 0
+	self._elements = {}
+	local themer = self._window._themer
+
+	local frame = Create("Frame") {
+		Name = title or "Section",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = tab:_nextOrder(),
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 6),
+		},
+	}
+
+	if title and title ~= "" then
+		local header = Create("TextLabel") {
+			Name = "Header",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 28),
+			Text = title,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Bottom,
+			LayoutOrder = 0,
+			Parent = frame,
+			[1] = Create("UIPadding") { PaddingLeft = UDim.new(0, 4), PaddingBottom = UDim.new(0, 2) },
+		}
+		Typography.Apply(header, "TitleSmall")
+		themer:Bind(header, { TextColor3 = "Primary" })
+		self._header = header
+	end
+
+	frame.Parent = tab._holder
+	self.Instance = frame
+	self._holder = frame
+	return self
+end
+
+function Section:SetTitle(text: string)
+	if self._header then
+		self._header.Text = text
+	end
+end
+
+function Section:SetVisible(visible: boolean)
+	self.Instance.Visible = visible
+end
+
+function Section:Destroy()
+	for _, element in self._elements do
+		element:Destroy()
+	end
+	self.Instance:Destroy()
+end
+
+--== Tab ==--
+
+local Tab = {}
+Tab.__index = Tab
+Container.extend(Tab)
+
+function Tab.new(window, props)
+	if type(props) == "string" then
+		props = { Title = props }
+	end
+	props = props or {}
+	local self = setmetatable({}, Tab)
+	self._window = window
+	self._order = 0
+	self._elements = {}
+	self._sections = {}
+	self.Title = props.Title or props.Name or "Tab"
+	local themer = window._themer
+	local theme = window.Theme
+
+	-- Navigation drawer item: pill-shaped active indicator, icon + label.
+	local button = Create("TextButton") {
+		Name = self.Title,
+		AutoButtonColor = false,
+		Text = "",
+		BorderSizePixel = 0,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 40),
+		LayoutOrder = #window.Tabs + 1,
+		Parent = window._navList,
+	}
+	Shape.Corner(Shape.Full, button)
+	local stateLayer = StateLayer.new(button, theme.Colors.OnSurface, Shape.Full)
+
+	local icon = Base.Glyph(themer, props.Icon or "circle", 20, nil, button)
+	icon.AnchorPoint = Vector2.new(0, 0.5)
+	icon.Position = UDim2.new(0, 14, 0.5, 0)
+	local hasIcon = props.Icon ~= nil and icon.Visible
+	icon.Visible = hasIcon
+
+	local label = Create("TextLabel") {
+		Name = "Label",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(hasIcon and 44 or 16, 0),
+		Size = UDim2.new(1, hasIcon and -52 or -24, 1, 0),
+		Text = self.Title,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = button,
+	}
+	Typography.Apply(label, "LabelLarge")
+
+	self._button = button
+	self._icon = icon
+	self._label = label
+	self._stateLayer = stateLayer
+
+	local page = Create("ScrollingFrame") {
+		Name = self.Title,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 4,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+		Visible = false,
+		Parent = window._pages,
+		[1] = Create("UIPadding") {
+			PaddingTop = UDim.new(0, 12),
+			PaddingBottom = UDim.new(0, 16),
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+		},
+		[2] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 8),
+		},
+	}
+	themer:Bind(page, { ScrollBarImageColor3 = "Outline" })
+	self.Instance = page
+	self._holder = page
+
+	window._maid:GiveTask(button.MouseEnter:Connect(function()
+		stateLayer:SetState("Hover", true)
+	end))
+	window._maid:GiveTask(button.MouseLeave:Connect(function()
+		stateLayer:SetState("Hover", false)
+	end))
+	window._maid:GiveTask(button.Activated:Connect(function()
+		window:SelectTab(self)
+	end))
+	window._maid:GiveTask(theme.Changed:Connect(function()
+		self:_paint()
+	end))
+
+	self:_paint()
+	return self
+end
+
+function Tab:_paint()
+	local c = self._window.Theme.Colors
+	local active = self._window.SelectedTab == self
+	self._button.BackgroundColor3 = c.SecondaryContainer
+	TweenService:Create(self._button, Motion.Standard(Motion.Duration.Short3), {
+		BackgroundTransparency = active and 0 or 1,
+	}):Play()
+	local content = active and c.OnSecondaryContainer or c.OnSurfaceVariant
+	self._label.TextColor3 = content
+	self._icon.TextColor3 = content
+	self._stateLayer:SetColor(c.OnSurface)
+end
+
+function Tab:_setActive(active: boolean)
+	local page = self.Instance
+	page.Visible = active
+	if active then
+		page.Position = UDim2.fromOffset(0, 12)
+		TweenService:Create(page, Motion.Emphasized(Motion.Duration.Medium2), { Position = UDim2.new() }):Play()
+	end
+	self:_paint()
+end
+
+function Tab:AddSection(title: string?)
+	local section = Section.new(self, title)
+	table.insert(self._sections, section)
+	return section
+end
+Tab.CreateSection = Tab.AddSection
+
+function Tab:Select()
+	self._window:SelectTab(self)
+end
+
+function Tab:Destroy()
+	for _, section in self._sections do
+		section:Destroy()
+	end
+	for _, element in self._elements do
+		element:Destroy()
+	end
+	self._button:Destroy()
+	self.Instance:Destroy()
+end
+
+Tab.Section = Section
+return Tab
+end
+
+-- Window/Themer.lua
+loaders[newNode("Themer", N_Window)] = function(script, require)
+-- Binds plain Instance properties to theme color roles so hand-built window
+-- chrome recolors on Theme.Changed the same way the components do.
+--
+--   themer:Bind(frame, { BackgroundColor3 = "SurfaceContainerHigh" })
+--   themer:Bind(label, { TextColor3 = function(c) return c.Primary end })
+local Themer = {}
+Themer.__index = Themer
+
+local function apply(inst, map, colors)
+	for prop, role in map do
+		if type(role) == "function" then
+			inst[prop] = role(colors)
+		else
+			inst[prop] = colors[role]
+		end
+	end
+end
+
+function Themer.new(theme)
+	local self = setmetatable({}, Themer)
+	self.Theme = theme
+	-- Strong keys on purpose: Roblox may collect and recreate an Instance's
+	-- Lua wrapper, which would silently drop weak-keyed bindings. Entries
+	-- are removed when the instance is destroyed instead.
+	self._bindings = {}
+	self._cleanup = {}
+	self._connection = theme.Changed:Connect(function()
+		self:Refresh()
+	end)
+	return self
+end
+
+function Themer:Bind(inst: Instance, map)
+	local existing = self._bindings[inst]
+	if existing then
+		for prop, role in map do
+			existing[prop] = role
+		end
+	else
+		self._bindings[inst] = map
+		self._cleanup[inst] = inst.Destroying:Connect(function()
+			self:Unbind(inst)
+		end)
+	end
+	apply(inst, map, self.Theme.Colors)
+	return inst
+end
+
+function Themer:Unbind(inst: Instance)
+	self._bindings[inst] = nil
+	local connection = self._cleanup[inst]
+	if connection then
+		self._cleanup[inst] = nil
+		connection:Disconnect()
+	end
+end
+
+function Themer:Refresh()
+	local colors = self.Theme.Colors
+	for inst, map in self._bindings do
+		if inst.Parent then
+			apply(inst, map, colors)
+		end
+	end
+end
+
+function Themer:Destroy()
+	self._connection:Disconnect()
+	for _, connection in self._cleanup do
+		connection:Disconnect()
+	end
+	table.clear(self._cleanup)
+	table.clear(self._bindings)
+end
+
+return Themer
+end
+
+-- Window/Window.lua
+loaders[newNode("Window", N_Window)] = function(script, require)
+--[[
+	Executor-style window built from MD3 components.
+
+	local Window = MD3:CreateWindow({
+		Title = "My Hub",
+		Subtitle = "v1.0",
+		Icon = "widgets",                  -- Material icon name (optional)
+		Size = UDim2.fromOffset(600, 420),
+		Mode = "Dark",                     -- "Light" | "Dark"
+		Seed = Color3.fromHex("#6750A4"),  -- accent / seed color
+		ToggleKey = Enum.KeyCode.RightShift,
+		ConfigFolder = "MyHub",            -- where configs are saved (executor workspace)
+		IconFont = true,                   -- download + load the Material Icons font
+		MobileButton = nil,                -- floating open/close button; default: on touch devices
+	})
+
+	local Main = Window:AddTab({ Title = "Main", Icon = "home" })
+	Main:AddToggle({ Title = "Auto farm", Flag = "AutoFarm", Callback = function(on) end })
+
+	Window:Notify({ Title = "Loaded", Content = "Press RightShift to hide", Icon = "check_circle" })
+]]
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local Root = script.Parent.Parent
+local Create = require(Root.Util.Create)
+local Maid = require(Root.Util.Maid)
+local Signal = require(Root.Util.Signal)
+local Theme = require(Root.Core.Theme)
+local Typography = require(Root.Core.Typography)
+local Shape = require(Root.Core.Shape)
+local Motion = require(Root.Core.Motion)
+local Elevation = require(Root.Core.Elevation)
+local StateLayer = require(Root.Core.StateLayer)
+local Icons = require(Root.Core.Icons)
+local Dialog = require(Root.Components.Dialog)
+local Env = require(Root.Executor.Env)
+local IconFont = require(Root.Executor.IconFont)
+local Themer = require(script.Parent.Themer)
+local Config = require(script.Parent.Config)
+local Notifier = require(script.Parent.Notifier)
+local Tab = require(script.Parent.Tab)
+local Base = require(script.Parent.Elements.Base)
+
+local TOP_BAR_HEIGHT = 56
+local NAV_WIDTH = 168
+local DEFAULT_SIZE = UDim2.fromOffset(600, 420)
+
+local Window = {}
+Window.__index = Window
+
+local function isPress(input)
+	return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function isMove(input)
+	return input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function toKeyCode(value)
+	if typeof(value) == "EnumItem" then
+		return value
+	elseif type(value) == "string" then
+		local ok, key = pcall(function()
+			return (Enum.KeyCode :: any)[value]
+		end)
+		return ok and key or nil
+	end
+	return nil
+end
+
+local function sanitize(name: string): string
+	return (tostring(name):gsub("[^%w%-_ ]", ""))
+end
+
+-- Makes `handle` drag `target` around (mouse and touch). `onClick` fires
+-- instead when the pointer barely moved, so a draggable button still clicks.
+local function makeDraggable(maid, handle: GuiObject, target: GuiObject, onClick)
+	local dragging, dragInput, startPos, startInput = false, nil, nil, nil
+	local moved = false
+
+	maid:GiveTask(handle.InputBegan:Connect(function(input)
+		if isPress(input) then
+			dragging, moved = true, false
+			dragInput = input
+			startInput = input.Position
+			startPos = target.Position
+		end
+	end))
+	maid:GiveTask(UserInputService.InputChanged:Connect(function(input)
+		if not dragging or not isMove(input) then
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.Touch and dragInput.UserInputType == Enum.UserInputType.Touch and input ~= dragInput then
+			return
+		end
+		local delta = input.Position - startInput
+		if delta.Magnitude > 4 then
+			moved = true
+		end
+		target.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end))
+	maid:GiveTask(UserInputService.InputEnded:Connect(function(input)
+		if dragging and isPress(input) then
+			dragging = false
+			if not moved and onClick then
+				onClick()
+			end
+		end
+	end))
+end
+
+function Window.new(props)
+	props = props or {}
+	local self = setmetatable({}, Window)
+	self.Title = props.Title or props.Name or "MD3"
+	self.Flags = {}
+	self.Tabs = {}
+	self.SelectedTab = nil
+	self.Visible = true
+	self.Minimized = false
+	self.OnUnload = Signal.new()
+	self._maid = Maid.new()
+	self._toggleKey = toKeyCode(props.ToggleKey or props.Keybind) or Enum.KeyCode.RightShift
+	self._size = props.Size or DEFAULT_SIZE
+
+	-- Replace the window a previous run of the same script left behind.
+	local registry = Env.Registry()
+	registry.Windows = registry.Windows or {}
+	self._registryKey = props.Id or self.Title
+	local previous = registry.Windows[self._registryKey]
+	if previous and previous ~= self and props.ReplaceExisting ~= false then
+		pcall(previous.Destroy, previous)
+	end
+	registry.Windows[self._registryKey] = self
+
+	self._configFolder = props.ConfigFolder or props.Folder or `MD3/{sanitize(self.Title)}`
+
+	if props.IconFont ~= false and not Icons.HasFont() then
+		pcall(IconFont.Load, "MD3")
+	end
+
+	self.Theme = props.Theme or Theme.new(props.Seed or props.Accent, props.Mode or "Dark")
+	self._themer = Themer.new(self.Theme)
+	local themer = self._themer
+
+	--== ScreenGui ==--
+	local gui = Create("ScreenGui") {
+		Name = props.GuiName or Env.RandomName(),
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = props.DisplayOrder or 100,
+	}
+	Env.ProtectGui(gui)
+	gui.Parent = props.Parent or Env.GetGuiParent()
+	self.Gui = gui
+
+	--== Main surface ==--
+	local main = Create("Frame") {
+		Name = "Main",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = self._size,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Active = true,
+		Parent = gui,
+	}
+	Shape.Corner(Shape.Large, main)
+	themer:Bind(main, { BackgroundColor3 = "Surface" })
+	themer:Bind(Create("UIStroke") {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Thickness = 1,
+		Parent = main,
+	}, { Color = "OutlineVariant" })
+	local uiScale = Create("UIScale") { Parent = main }
+	self.Instance = main
+	self._uiScale = uiScale
+
+	-- The shadow is a sibling of `main`, outside its UIScale, so it gets its
+	-- own UIScale kept in sync (otherwise it stays full size on phones).
+	local shadowScale = nil
+	local function applyShadow()
+		local holder = Elevation.Apply(main, 3, self.Theme.Colors.Shadow, Shape.Large)
+		shadowScale = holder and Create("UIScale") { Scale = uiScale.Scale, Parent = holder }
+	end
+	applyShadow()
+	self._maid:GiveTask(self.Theme.Changed:Connect(applyShadow))
+	self._maid:GiveTask(uiScale:GetPropertyChangedSignal("Scale"):Connect(function()
+		if shadowScale then
+			shadowScale.Scale = uiScale.Scale
+		end
+	end))
+
+	--== Top app bar ==--
+	local topBar = Create("Frame") {
+		Name = "TopBar",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, TOP_BAR_HEIGHT),
+		Active = true,
+		Parent = main,
+	}
+
+	local hasAppIcon = props.Icon ~= nil and Icons.CanRender(props.Icon)
+	if hasAppIcon then
+		local appIcon = Base.Glyph(themer, props.Icon, 24, "Primary", topBar)
+		appIcon.AnchorPoint = Vector2.new(0, 0.5)
+		appIcon.Position = UDim2.new(0, 20, 0.5, 0)
+	end
+
+	local titleColumn = Create("Frame") {
+		Name = "Titles",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(hasAppIcon and 56 or 20, 0),
+		Size = UDim2.new(1, -(hasAppIcon and 56 or 20) - 96, 1, 0),
+		Parent = topBar,
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		},
+	}
+	local title = Create("TextLabel") {
+		Name = "Title",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 22),
+		Text = self.Title,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		LayoutOrder = 1,
+		Parent = titleColumn,
+	}
+	Typography.Apply(title, "TitleMedium")
+	themer:Bind(title, { TextColor3 = "OnSurface" })
+	self._titleLabel = title
+
+	local subtitle = Create("TextLabel") {
+		Name = "Subtitle",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 16),
+		Text = props.Subtitle or "",
+		Visible = (props.Subtitle or "") ~= "",
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		LayoutOrder = 2,
+		Parent = titleColumn,
+	}
+	Typography.Apply(subtitle, "BodySmall")
+	themer:Bind(subtitle, { TextColor3 = "OnSurfaceVariant" })
+	self._subtitleLabel = subtitle
+
+	local actions = Create("Frame") {
+		Name = "Actions",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -12, 0.5, 0),
+		Size = UDim2.fromOffset(80, 36),
+		Parent = topBar,
+		[1] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+		},
+	}
+
+	local function barButton(iconName: string, order: number, onActivated)
+		local button = Create("TextButton") {
+			Name = iconName,
+			AutoButtonColor = false,
+			Text = "",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(36, 36),
+			LayoutOrder = order,
+			Parent = actions,
+		}
+		Shape.Corner(Shape.Full, button)
+		local glyph = Base.Glyph(themer, iconName, 20, "OnSurfaceVariant", button)
+		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+		glyph.Position = UDim2.fromScale(0.5, 0.5)
+		local layer = StateLayer.new(button, self.Theme.Colors.OnSurfaceVariant, Shape.Full)
+		themer:Bind(layer.Instance, { BackgroundColor3 = "OnSurfaceVariant" })
+		self._maid:GiveTask(button.MouseEnter:Connect(function()
+			layer:SetState("Hover", true)
+		end))
+		self._maid:GiveTask(button.MouseLeave:Connect(function()
+			layer:SetState("Hover", false)
+		end))
+		self._maid:GiveTask(button.Activated:Connect(onActivated))
+		return button
+	end
+
+	barButton("minimize", 1, function()
+		self:Minimize()
+	end)
+	barButton("close", 2, function()
+		self:_confirmClose()
+	end)
+
+	makeDraggable(self._maid, topBar, main)
+
+	--== Body: navigation drawer + content ==--
+	local body = Create("Frame") {
+		Name = "Body",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, TOP_BAR_HEIGHT),
+		Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT),
+		Parent = main,
+	}
+	self._body = body
+
+	local navList = Create("ScrollingFrame") {
+		Name = "Navigation",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, NAV_WIDTH, 1, 0),
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 0,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = body,
+		[1] = Create("UIPadding") {
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+			PaddingBottom = UDim.new(0, 12),
+		},
+		[2] = Create("UIListLayout") {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+		},
+	}
+	self._navList = navList
+
+	local pages = Create("Frame") {
+		Name = "Pages",
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(NAV_WIDTH, 0),
+		Size = UDim2.new(1, -NAV_WIDTH - 12, 1, -12),
+		ClipsDescendants = true,
+		Parent = body,
+	}
+	Shape.Corner(Shape.Large, pages)
+	themer:Bind(pages, { BackgroundColor3 = "SurfaceContainerLow" })
+	self._pages = pages
+
+	--== Notifications ==--
+	self._notifier = Notifier.new(gui, themer)
+
+	--== Floating open/close button (for touch devices without a keyboard) ==--
+	local showMobileButton = props.MobileButton
+	if showMobileButton == nil then
+		showMobileButton = UserInputService.TouchEnabled
+	end
+	if showMobileButton then
+		local mobileButton = Create("TextButton") {
+			Name = "Toggle",
+			AutoButtonColor = false,
+			Text = "",
+			Position = UDim2.new(0, 16, 0.3, 0),
+			Size = UDim2.fromOffset(48, 48),
+			BorderSizePixel = 0,
+			ZIndex = 60,
+			Parent = gui,
+		}
+		Shape.Corner(Shape.Large, mobileButton)
+		themer:Bind(mobileButton, { BackgroundColor3 = "PrimaryContainer" })
+		local glyph = Base.Glyph(themer, props.Icon and Icons.CanRender(props.Icon) and props.Icon or "menu", 24, "OnPrimaryContainer", mobileButton)
+		glyph.AnchorPoint = Vector2.new(0.5, 0.5)
+		glyph.Position = UDim2.fromScale(0.5, 0.5)
+		glyph.ZIndex = 61
+		makeDraggable(self._maid, mobileButton, mobileButton, function()
+			self:Toggle()
+		end)
+		self._mobileButton = mobileButton
+	end
+
+	--== Input: toggle key ==--
+	self._maid:GiveTask(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or UserInputService:GetFocusedTextBox() or self:_isCapturingKey(input) then
+			return
+		end
+		if self._toggleKey and input.KeyCode == self._toggleKey then
+			self:Toggle()
+		end
+	end))
+
+	--== Fit small screens (phones) ==--
+	local function rescale()
+		if props.Scale then
+			uiScale.Scale = props.Scale
+			return
+		end
+		local camera = workspace.CurrentCamera
+		local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+		local fit = math.min(1, (viewport.X - 24) / self._size.X.Offset, (viewport.Y - 24) / self._size.Y.Offset)
+		uiScale.Scale = math.max(fit, 0.4)
+	end
+	rescale()
+	local camera = workspace.CurrentCamera
+	if camera then
+		self._maid:GiveTask(camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale))
+	end
+
+	return self
+end
+
+--== Internal helpers ==--
+
+-- Runs a user callback without letting its errors break the UI.
+function Window:_call(fn, ...)
+	task.spawn(function(...)
+		local ok, err = xpcall(fn, debug.traceback, ...)
+		if not ok then
+			warn(`[MD3] {self.Title}: callback error: {err}`)
+		end
+	end, ...)
+end
+
+-- True while a Keybind element is waiting for (or has just consumed) this
+-- key press, so rebinding a key doesn't also trigger whatever it's bound to.
+-- Matched by key + time rather than InputObject identity, since Roblox may
+-- reuse InputObjects between presses.
+function Window:_isCapturingKey(input): boolean
+	if self._keybindListening then
+		return true
+	end
+	return input ~= nil
+		and self._capturedKey ~= nil
+		and input.KeyCode == self._capturedKey
+		and os.clock() - self._capturedAt < 0.1
+end
+
+function Window:_confirmClose()
+	self:Dialog({
+		Title = "Close window?",
+		Content = `Hide keeps the script running (press {self._toggleKey and self._toggleKey.Name or "the toggle key"} to reopen). Unload destroys the UI.`,
+		Buttons = {
+			{ Title = "Cancel", Variant = "Text" },
+			{
+				Title = "Unload",
+				Variant = "Text",
+				Callback = function()
+					self:Destroy()
+				end,
+			},
+			{
+				Title = "Hide",
+				Variant = "Filled",
+				Callback = function()
+					self:SetVisible(false)
+				end,
+			},
+		},
+	})
+end
+
+--== Tabs ==--
+
+function Window:AddTab(props)
+	local tab = Tab.new(self, props)
+	table.insert(self.Tabs, tab)
+	if not self.SelectedTab then
+		self:SelectTab(tab)
+	end
+	return tab
+end
+Window.CreateTab = Window.AddTab
+
+-- Accepts a Tab, its index, or its title.
+function Window:SelectTab(target)
+	local tab = target
+	if type(target) == "number" then
+		tab = self.Tabs[target]
+	elseif type(target) == "string" then
+		for _, candidate in self.Tabs do
+			if candidate.Title == target then
+				tab = candidate
+			end
+		end
+	end
+	if type(tab) ~= "table" or tab == self.SelectedTab then
+		return
+	end
+	local previous = self.SelectedTab
+	self.SelectedTab = tab
+	if previous then
+		previous:_setActive(false)
+	end
+	tab:_setActive(true)
+end
+
+--== Visibility ==--
+
+function Window:SetVisible(visible: boolean)
+	self.Visible = visible
+	local main = self.Instance
+	if visible then
+		main.Visible = true
+		local target = self._uiScale.Scale
+		self._uiScale.Scale = target * 0.94
+		TweenService:Create(self._uiScale, Motion.Emphasized(Motion.Duration.Medium2), { Scale = target }):Play()
+	else
+		main.Visible = false
+	end
+end
+
+function Window:Toggle()
+	self:SetVisible(not self.Visible)
+end
+
+function Window:Minimize(minimized: boolean?)
+	if minimized == nil then
+		minimized = not self.Minimized
+	end
+	self.Minimized = minimized
+	local main = self.Instance
+	local ti = Motion.Emphasized(Motion.Duration.Medium2)
+	if minimized then
+		local tween = TweenService:Create(main, ti, {
+			Size = UDim2.new(self._size.X.Scale, self._size.X.Offset, 0, TOP_BAR_HEIGHT),
+		})
+		tween:Play()
+		tween.Completed:Once(function()
+			if self.Minimized then
+				self._body.Visible = false
+			end
+		end)
+	else
+		self._body.Visible = true
+		TweenService:Create(main, ti, { Size = self._size }):Play()
+	end
+end
+
+function Window:SetToggleKey(key)
+	self._toggleKey = toKeyCode(key)
+end
+
+function Window:SetTitle(text: string)
+	self.Title = text
+	self._titleLabel.Text = text
+end
+
+function Window:SetSubtitle(text: string?)
+	self._subtitleLabel.Text = text or ""
+	self._subtitleLabel.Visible = (text or "") ~= ""
+end
+
+--== Feedback ==--
+
+-- Notify({ Title, Content, Icon = "info", Duration = 5 })
+function Window:Notify(props)
+	return self._notifier:Notify(props)
+end
+
+-- Dialog({ Title, Content, Buttons = { { Title, Variant = "Filled", Callback } } })
+function Window:Dialog(props)
+	local actions = {}
+	for _, button in props.Buttons or props.Actions or { { Title = "OK", Variant = "Filled" } } do
+		table.insert(actions, {
+			Text = button.Title or button.Text or "OK",
+			Variant = button.Variant or "Text",
+			OnActivated = button.Callback and function()
+				self:_call(button.Callback)
+			end,
+		})
+	end
+	local dialog = Dialog.new({
+		Parent = self.Instance,
+		Title = props.Title or "",
+		Text = props.Content or props.Text or "",
+		Actions = actions,
+		Theme = self.Theme,
+		ZIndex = 100,
+	})
+	Shape.Corner(Shape.Large, dialog.Instance)
+	dialog.Dismissed:Connect(function()
+		dialog:Destroy()
+	end)
+	dialog:Show()
+	return dialog
+end
+
+--== Configs ==--
+
+function Window:CanSaveConfigs(): boolean
+	return Env.CanUseFiles
+end
+
+function Window:_configPath(name: string): string
+	return `{self._configFolder}/configs/{sanitize(name)}.json`
+end
+
+function Window:SaveConfig(name: string?): (boolean, string?)
+	if not Env.CanUseFiles then
+		return false, "this executor has no file functions"
+	end
+	name = name or "default"
+	Env.MakeFolder(`{self._configFolder}/configs`)
+	local ok = Env.WriteFile(self:_configPath(name), Config.Encode(self.Flags))
+	return ok, (not ok) and "writefile failed" or nil
+end
+
+function Window:LoadConfig(name: string?): (boolean, string?)
+	name = name or "default"
+	local json = Env.ReadFile(self:_configPath(name))
+	if not json then
+		return false, `config "{name}" not found`
+	end
+	local data = Config.Decode(json)
+	if not data then
+		return false, `config "{name}" is corrupted`
+	end
+	for flag, value in data do
+		local element = self.Flags[flag]
+		if element then
+			local ok, err = pcall(element.Set, element, value)
+			if not ok then
+				warn(`[MD3] could not load flag {flag}: {err}`)
+			end
+		end
+	end
+	return true
+end
+
+function Window:DeleteConfig(name: string): boolean
+	return Env.DeleteFile(self:_configPath(name))
+end
+
+function Window:ListConfigs(): { string }
+	local names = {}
+	for _, path in Env.ListFiles(`{self._configFolder}/configs`) do
+		local name = tostring(path):match("([^/\\]+)%.json$")
+		if name then
+			table.insert(names, name)
+		end
+	end
+	table.sort(names)
+	return names
+end
+
+function Window:SetAutoLoad(name: string?)
+	local path = `{self._configFolder}/autoload.txt`
+	if name then
+		Env.MakeFolder(self._configFolder)
+		Env.WriteFile(path, sanitize(name))
+	else
+		Env.DeleteFile(path)
+	end
+end
+
+function Window:GetAutoLoad(): string?
+	local name = Env.ReadFile(`{self._configFolder}/autoload.txt`)
+	return name ~= "" and name or nil
+end
+
+-- Call once at the end of your script, after every flagged element exists.
+function Window:LoadAutoloadConfig(): boolean
+	local name = self:GetAutoLoad()
+	if not name then
+		return false
+	end
+	local ok, err = self:LoadConfig(name)
+	if ok then
+		self:Notify({ Title = "Config loaded", Content = `Auto-loaded "{name}"`, Icon = "folder" })
+	else
+		warn(`[MD3] autoload failed: {err}`)
+	end
+	return ok
+end
+Window.LoadConfiguration = Window.LoadAutoloadConfig
+
+--== Built-in settings tab ==--
+
+-- Theme mode, accent color, toggle key, unload and (when the executor has
+-- file functions) config save/load/delete/autoload.
+function Window:AddSettingsTab(props)
+	props = props or {}
+	local tab = self:AddTab({ Title = props.Title or "Settings", Icon = props.Icon or "settings" })
+
+	local appearance = tab:AddSection("Appearance")
+	appearance:AddToggle({
+		Title = "Dark mode",
+		Default = self.Theme.Mode == "Dark",
+		Flag = "MD3_DarkMode",
+		Callback = function(on)
+			self.Theme:SetMode(on and "Dark" or "Light")
+		end,
+	})
+	appearance:AddColorPicker({
+		Title = "Accent color",
+		Description = "Seed color the whole palette is generated from",
+		Default = self.Theme.Seed,
+		Flag = "MD3_Accent",
+		Callback = function(color)
+			self.Theme:SetSeedColor(color)
+		end,
+	})
+
+	local interface = tab:AddSection("Interface")
+	interface:AddKeybind({
+		Title = "Toggle UI",
+		Description = "Shows / hides this window",
+		Default = self._toggleKey,
+		Flag = "MD3_ToggleKey",
+		ChangedCallback = function(key)
+			self:SetToggleKey(key)
+		end,
+	})
+	interface:AddButton({
+		Title = "Unload",
+		Description = "Destroys this UI",
+		Icon = "close",
+		Callback = function()
+			self:Destroy()
+		end,
+	})
+
+	if self:CanSaveConfigs() then
+		local configs = tab:AddSection("Configuration")
+		local nameInput = configs:AddInput({ Title = "Config name", Placeholder = "default" })
+		local list = configs:AddDropdown({ Title = "Saved configs", Options = self:ListConfigs() })
+
+		local function selectedName()
+			if nameInput.Value ~= "" then
+				return nameInput.Value
+			end
+			return list.Value or "default"
+		end
+		local function refresh()
+			list:SetOptions(self:ListConfigs())
+		end
+
+		configs:AddButton({
+			Title = "Save config",
+			Icon = "save",
+			Callback = function()
+				local name = selectedName()
+				local ok, err = self:SaveConfig(name)
+				refresh()
+				list:Set(name, true)
+				self:Notify({ Title = ok and "Config saved" or "Save failed", Content = ok and name or err, Icon = ok and "save" or "error" })
+			end,
+		})
+		configs:AddButton({
+			Title = "Load config",
+			Icon = "folder",
+			Callback = function()
+				local name = selectedName()
+				local ok, err = self:LoadConfig(name)
+				self:Notify({ Title = ok and "Config loaded" or "Load failed", Content = ok and name or err, Icon = ok and "folder" or "error" })
+			end,
+		})
+		configs:AddButton({
+			Title = "Delete config",
+			Icon = "delete",
+			Callback = function()
+				local name = selectedName()
+				self:DeleteConfig(name)
+				refresh()
+				self:Notify({ Title = "Config deleted", Content = name, Icon = "delete" })
+			end,
+		})
+		local autoload
+		autoload = configs:AddButton({
+			Title = "Set as autoload",
+			Description = `Current: {self:GetAutoLoad() or "none"}`,
+			Icon = "bolt",
+			Callback = function()
+				local name = selectedName()
+				self:SetAutoLoad(name)
+				autoload:SetDescription(`Current: {name}`)
+				self:Notify({ Title = "Autoload set", Content = name, Icon = "bolt" })
+			end,
+		})
+		configs:AddButton({
+			Title = "Clear autoload",
+			Icon = "block",
+			Callback = function()
+				self:SetAutoLoad(nil)
+				autoload:SetDescription("Current: none")
+			end,
+		})
+	end
+
+	return tab
+end
+
+--== Teardown ==--
+
+function Window:Destroy()
+	if self._destroyed then
+		return
+	end
+	self._destroyed = true
+	self.OnUnload:Fire()
+	for _, tab in self.Tabs do
+		pcall(tab.Destroy, tab)
+	end
+	self._maid:Destroy()
+	self._themer:Destroy()
+	Elevation.Remove(self.Instance)
+	self.Gui:Destroy()
+
+	local registry = Env.Registry()
+	if registry.Windows and registry.Windows[self._registryKey] == self then
+		registry.Windows[self._registryKey] = nil
+	end
+end
+Window.Unload = Window.Destroy
+
+return Window
+end
+
 -- init.lua
 loaders[N_root] = function(script, require)
 --[[
 	MD3 — a Material Design 3 UI library for Roblox Luau.
 
-	Quick start:
+	Executors:
+		local MD3 = loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/engnyg/Material-Design-3-Roblox-lua-ui/main/dist/MaterialDesign3.luau"
+		))()
+		local Window = MD3:CreateWindow({ Title = "My Hub" })
+		local Main = Window:AddTab({ Title = "Main", Icon = "home" })
+		Main:AddToggle({ Title = "Auto farm", Flag = "AutoFarm", Callback = function(on) end })
+
+		See examples/executor.lua for every element.
+
+	Components directly (Studio / your own game):
 		local MD3 = require(path.to.MaterialDesign3)
 
 		-- optional: recolor the whole app from one seed color (mutates the
@@ -4182,6 +7361,18 @@ MD3.TopAppBar = require(script.Components.TopAppBar)
 MD3.NavigationBar = require(script.Components.NavigationBar)
 MD3.ProgressIndicator = require(script.Components.ProgressIndicator)
 MD3.Divider = require(script.Components.Divider)
+
+-- Executor layer
+MD3.Env = require(script.Executor.Env)
+MD3.IconFont = require(script.Executor.IconFont)
+MD3.Window = require(script.Window.Window)
+
+-- Creates an executor-style window. Works as MD3:CreateWindow{...} or
+-- MD3.CreateWindow{...}.
+function MD3.CreateWindow(selfOrProps, maybeProps)
+	local props = if selfOrProps == MD3 then maybeProps else selfOrProps
+	return MD3.Window.new(props)
+end
 
 -- Shorthand for MD3.Theme.new(seed, mode)
 function MD3.new(seed: Color3?, mode: string?)

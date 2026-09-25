@@ -50,19 +50,29 @@ function FAB.new(props)
 	}
 	Shape.Corner(radius, button)
 
+	-- Padding + layout live on an inner frame: the state layer and ripples
+	-- are parented to the button itself and must not be laid out.
+	local content = Create("Frame") {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = self._extended and UDim2.new(0, 0, 1, 0) or UDim2.fromScale(1, 1),
+		AutomaticSize = self._extended and Enum.AutomaticSize.X or Enum.AutomaticSize.None,
+		Parent = button,
+	}
+
 	Create("UIListLayout") {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 12),
-		Parent = button,
+		Parent = content,
 	}
 
 	if self._extended then
 		Create("UIPadding") {
 			PaddingLeft = UDim.new(0, 16),
 			PaddingRight = UDim.new(0, 20),
-			Parent = button,
+			Parent = content,
 		}
 	end
 
@@ -72,7 +82,7 @@ function FAB.new(props)
 		Size = UDim2.fromOffset(ICON_SIZES[self._size], ICON_SIZES[self._size]),
 		Image = props.Icon or "",
 		LayoutOrder = 1,
-		Parent = button,
+		Parent = content,
 	}
 	self._icon = icon
 
@@ -85,7 +95,7 @@ function FAB.new(props)
 			Size = UDim2.new(0, 0, 1, 0),
 			Text = props.Text or "",
 			LayoutOrder = 2,
-			Parent = button,
+			Parent = content,
 		}
 		Typography.Apply(label, "LabelLarge")
 	end

@@ -66,10 +66,20 @@ function Button.new(props)
 	}
 	Shape.Corner(Shape.Full, button)
 
+	-- Padding + layout live on an inner frame: the state layer and ripples
+	-- are parented to the button itself and must not be laid out.
+	local content = Create("Frame") {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Size = props.Size and UDim2.fromScale(1, 1) or UDim2.new(0, 0, 1, 0),
+		AutomaticSize = props.Size and Enum.AutomaticSize.None or Enum.AutomaticSize.X,
+		Parent = button,
+	}
+
 	local padding = Create("UIPadding") {
 		PaddingLeft = UDim.new(0, 24),
 		PaddingRight = UDim.new(0, 24),
-		Parent = button,
+		Parent = content,
 	}
 	self._padding = padding
 
@@ -78,7 +88,7 @@ function Button.new(props)
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, 8),
-		Parent = button,
+		Parent = content,
 	}
 
 	local icon = nil
@@ -89,7 +99,7 @@ function Button.new(props)
 			Image = props.Icon,
 			Size = UDim2.fromOffset(18, 18),
 			LayoutOrder = 1,
-			Parent = button,
+			Parent = content,
 		}
 	end
 	self._icon = icon
@@ -101,7 +111,7 @@ function Button.new(props)
 		Size = UDim2.new(0, 0, 1, 0),
 		Text = props.Text or "",
 		LayoutOrder = 2,
-		Parent = button,
+		Parent = content,
 	}
 	Typography.Apply(label, "LabelLarge")
 	self._label = label
