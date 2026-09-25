@@ -8814,7 +8814,8 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
 		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
-		Silent = false,                    -- true: no loading screen, start hidden, autoload without a notification
+		Silent = false,                    -- true: no loading screen, start hidden, no automatic notifications
+		ToggleNotify = true,               -- toast when the toggle key shows / hides the window
 	})
 
 	local Main = Window:AddTab({ Title = "Main", Icon = "home" })
@@ -9282,6 +9283,7 @@ function Window.new(props)
 		end
 		if self._toggleKey and input.KeyCode == self._toggleKey then
 			self:Toggle()
+			self:_notifyToggle()
 		end
 	end))
 
@@ -9306,6 +9308,8 @@ function Window.new(props)
 	-- Nothing pops up: no loading screen, the window starts hidden (toggle
 	-- key / mobile button opens it) and autoload doesn't notify.
 	self.Silent = props.Silent == true
+	-- Toast when the toggle key shows / hides the window (not in Silent mode).
+	self._toggleNotify = props.ToggleNotify ~= false
 	if self.Silent then
 		self.Visible = false
 		main.Visible = false
@@ -9442,6 +9446,22 @@ end
 
 function Window:Toggle()
 	self:SetVisible(not self.Visible)
+end
+
+-- Tells the player what the toggle key just did and how to undo it. The
+-- previous toast is closed first, so pressing the key repeatedly doesn't
+-- pile them up.
+function Window:_notifyToggle()
+	if self.Silent or not self._toggleNotify then
+		return
+	end
+	if self._toggleToast then
+		self._toggleToast.Close()
+	end
+	local key = if self._toggleKey then self._toggleKey.Name else "the toggle key"
+	self._toggleToast = self:Notify(if self.Visible
+		then { Title = "UI shown", Content = `Press {key} to hide it`, Icon = "visibility", Duration = 3 }
+		else { Title = "UI hidden", Content = `Press {key} to show it again`, Icon = "visibility_off", Duration = 3 })
 end
 
 -- Ends the loading screen now (e.g. once your own setup is done).

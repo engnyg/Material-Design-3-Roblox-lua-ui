@@ -858,11 +858,32 @@ silent:AddSettingsTab()
 check(findElement(silent, "Loading animation") == nil, "no loading switch in silent mode")
 press(Enum.KeyCode.F8)
 check(silent.Visible and silent.Instance.Visible, "the toggle key should open a silent window")
+check(toasts(silent) == 1, "the toggle key should not notify in silent mode")
 silent:Destroy()
 local loud = MD3.CreateWindow({ Title = "Loud Hub", Parent = host, ConfigFolder = "SilentHub" })
 loud:AddTab({ Title = "Main" }):AddToggle({ Title = "Auto", Flag = "SilentAuto" })
 check(loud.Instance.Visible and loud:LoadAutoloadConfig() and toasts(loud) == 1, "a normal window should notify on autoload")
 loud:Destroy()
+
+-- Toggle key toast (normal mode)
+local toastWin = MD3.CreateWindow({ Title = "Toast Hub", Parent = host, ToggleKey = "F7" })
+press(Enum.KeyCode.F7)
+check(not toastWin.Visible and toasts(toastWin) == 1, "hiding with the toggle key should show one toast")
+-- The card is a TextButton, so .Text is its Text property: look the column up by name.
+local function toastText(toast) return toast.Instance.Card:FindFirstChild("Text") end
+local hideToast = toastText(toastWin._toggleToast)
+check(hideToast.Title.Text == "UI hidden" and string.find(hideToast.Content.Text, "F7", 1, true) ~= nil, "hide toast should name the key")
+press(Enum.KeyCode.F7)
+flushTweens()
+check(toastWin.Visible and toasts(toastWin) == 1, "the previous toggle toast should close when a new one opens")
+check(toastText(toastWin._toggleToast).Title.Text == "UI shown", "show toast text")
+toastWin:Toggle()
+check(toasts(toastWin) == 1, "Window:Toggle() from code should not notify")
+toastWin:Destroy()
+local noToast = MD3.CreateWindow({ Title = "No Toast Hub", Parent = host, ToggleKey = "F6", ToggleNotify = false })
+press(Enum.KeyCode.F6)
+check(not noToast.Visible and toasts(noToast) == 0, "ToggleNotify = false should not notify")
+noToast:Destroy()
 
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.
