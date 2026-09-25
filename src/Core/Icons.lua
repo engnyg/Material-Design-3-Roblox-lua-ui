@@ -8,13 +8,16 @@
 	tints, resizes and themes exactly like a TextLabel).
 
 	Setup (one-time per game):
-		1. Download a Material Symbols/Icons .ttf, e.g. from
-		   https://github.com/google/material-design-icons (Apache-2.0).
+		1. Download a Material Icons .ttf: assets/fonts/MaterialIconsOutlined-Regular.ttf
+		   in this repo (Outlined, the M3 look), or font/MaterialIcons-Regular.ttf
+		   from https://github.com/google/material-design-icons (Filled). Apache-2.0.
 		2. Upload it to Roblox Studio as a Font asset (Toolbox > your fonts,
 		   or Asset Manager) and copy its rbxassetid.
 		3. MD3.Icons.SetFont(Font.new("rbxassetid://<your id>"))
 
-	On executors, MD3.IconFont.Load() does all of that automatically.
+	On executors, MD3.IconFont.Load() does all of that automatically
+	(Outlined by default; Filled / Round / Sharp also available). All four
+	styles share the codepoints below.
 
 	Until SetFont is called, Icons.Apply() falls back to Roblox's own
 	BuilderIcons font, which ships inside every Roblox client (no download,

@@ -12,6 +12,7 @@
 		ToggleKey = Enum.KeyCode.RightShift,
 		ConfigFolder = "MyHub",            -- where configs are saved (executor workspace)
 		IconFont = true,                   -- download + load the Material Icons font
+		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
 	})
 
@@ -142,8 +143,10 @@ function Window.new(props)
 
 	self._configFolder = props.ConfigFolder or props.Folder or `MD3/{sanitize(self.Title)}`
 
-	if props.IconFont ~= false and not Icons.HasFont() then
-		pcall(IconFont.Load, "MD3")
+	-- An explicit IconStyle always (re)loads; otherwise keep whatever font a
+	-- previous window or the script already set up.
+	if props.IconFont ~= false and (props.IconStyle ~= nil or not Icons.HasFont()) then
+		pcall(IconFont.Load, "MD3", props.IconStyle)
 	end
 
 	self.Theme = props.Theme or Theme.new(props.Seed or props.Accent, props.Mode or "Dark")
