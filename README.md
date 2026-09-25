@@ -18,6 +18,7 @@ local Window = MD3:CreateWindow({
     Seed = Color3.fromHex("#6750A4"),    -- 主題種子色，整套配色由它生成
     ToggleKey = Enum.KeyCode.RightShift, -- 顯示／隱藏視窗
     ConfigFolder = "MyHub",              -- 設定檔存放資料夾（executor workspace）
+    IconStyle = "Outlined",              -- 圖標樣式："Outlined"（預設）| "Filled" | "Round" | "Sharp"
 })
 
 local Main = Window:AddTab({ Title = "Main", Icon = "home" })
@@ -49,7 +50,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 - **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
 - **防偵測／相容性**：ScreenGui 優先放進 `gethui()`，其次 `CoreGui`，最後才是 `PlayerGui`；有 `syn.protect_gui` / `protectgui` 會自動套用；ScreenGui 名稱隨機。
 - **重複執行不會疊視窗**：同一個 `Title`（或 `Id`）的視窗再次建立時，舊的會先被卸載（透過 `getgenv()` 記錄）。
-- **真正的 Material 圖標**：支援 `writefile` + `getcustomasset` 的 executor 會自動下載 Google 官方 Material Icons 字型（Apache-2.0）並載入，不需要上傳任何資產；不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字。
+- **真正的 Material 圖標**：支援 `writefile` + `getcustomasset` 的 executor 會自動下載 Google 官方 Material Icons 字型（Apache-2.0）並載入，不需要上傳任何資產。預設是 M3 風格的**線條版（Outlined）**，可用 `IconStyle` 換成 `Filled`（實心）、`Round`（圓角）或 `Sharp`（直角）；不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字。
 - **外部圖片**：所有 `Icon` / `Logo` / 通知的 `Image` 都可以直接填網址，會自動下載並透過 `getcustomasset` 載入（見下方「載入外部圖片」）。
 - **設定檔**：`Window:SaveConfig(name)` / `LoadConfig(name)` / `ListConfigs()` / `DeleteConfig(name)` / `SetAutoLoad(name)`，存成 JSON（Color3、KeyCode 會自動序列化）。
 - **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetSeedColor(color)`，整個視窗立即重新上色。
@@ -197,7 +198,7 @@ end)
 
 - `Executor/Env.lua`：executor 全域函式的相容層（見上方「Executor 環境工具」）。
 - `Executor/Assets.lua`：外部圖片載入（見上方「載入外部圖片」）；所有元件的 `Icon` 參數都透過它解析。
-- `Executor/IconFont.lua`：`MD3.IconFont.Load()` 下載 `MaterialIcons-Regular.ttf` → 寫進 workspace → 產生 Roblox font family JSON → 用 `getcustomasset` 載入，並自動呼叫 `Icons.SetFont`。`CreateWindow` 預設會做這件事（`IconFont = false` 可關閉）。
+- `Executor/IconFont.lua`：`MD3.IconFont.Load(folder?, style?)` 下載該樣式的字型（預設 `Outlined`）→ 寫進 workspace → 產生 Roblox font family JSON → 用 `getcustomasset` 載入，並自動呼叫 `Icons.SetFont`。`CreateWindow` 預設會做這件事（`IconFont = false` 可關閉）。
 - `Window/Window.lua`、`Window/Tab.lua`：視窗、分頁與 Section。
 - `Window/Elements/*`：各個視窗元件；列表項目版面（標題／說明／右側控制項）共用 `Elements/Base.lua`。
 - `Window/Themer.lua`：把一般 Instance 屬性綁到主題色角色，換主題時自動重新上色。
@@ -207,13 +208,22 @@ end)
 
 **在 executor 上不用做任何事**：`CreateWindow` 會自動用 `MD3.IconFont.Load()` 下載並載入官方字型（需要 executor 支援 `writefile` 與 `getcustomasset`）。
 
+| `IconStyle` | 樣式 | 字型來源 |
+| --- | --- | --- |
+| `"Outlined"`（預設） | 線條版，M3 預設外觀 | 本 repo 的 [`assets/fonts/`](assets/fonts)（~420 KB） |
+| `"Filled"` | 實心版（舊版 Material 預設） | Google 官方 repo 的 `MaterialIcons-Regular.ttf`（~350 KB） |
+| `"Round"` | 圓角 | 本 repo 的 `assets/fonts/`（~500 KB） |
+| `"Sharp"` | 直角 | 本 repo 的 `assets/fonts/`（~350 KB） |
+
+Google 只提供 Outlined／Round／Sharp 的 `.otf`（CFF 輪廓）版本，為了確保 Roblox 能穩定載入，`assets/fonts/` 裡放的是用 [`tools/convert_icon_fonts.py`](tools/convert_icon_fonts.py) 轉成 TrueType 的同一套字型（字形、字碼、字距不變，驗證過渲染結果與原檔逐像素相同）。如果選的樣式下載失敗，會自動退回 `Filled`。也可以手動切換：`MD3.IconFont.Load("MD3", "Round")`。
+
 **沒有 Material 字型時**（executor 不支援 `getcustomasset`、或在 Studio 還沒設定字型），圖標會改用 Roblox 客戶端本身就有的 **BuilderIcons** 字型（`rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json`，Roblox App 介面用的那套）。它是連字（ligature）字型——文字 `gear` 會畫成齒輪——`Icons.lua` 內建了 Material 名稱到 BuilderIcons 名稱的對照表（`settings` → `gear`、`close` → `x`…）。也可以直接用任何 BuilderIcons 圖標：`Icon = "builder:sword"`。不想用可以呼叫 `MD3.Icons.SetBuilderIconsEnabled(false)`。優先順序：Material 字型 → BuilderIcons → 簡單符號。
 
 以下是在 Studio／自己遊戲裡使用 Material 字型的做法。
 
 Roblox 沒有內建 Material Symbols 字型，所以要顯示「真正的」M3 平面圖標，本質上一定要一個圖標字型資產——沒有捷徑。`Icons.lua` 幫你把這件事做成一次性設定：
 
-1. 到 [google/material-design-icons](https://github.com/google/material-design-icons)（Apache-2.0）下載 Material Symbols/Icons 的 `.ttf`。
+1. 下載字型：線條版用本 repo 的 [`assets/fonts/MaterialIconsOutlined-Regular.ttf`](assets/fonts/MaterialIconsOutlined-Regular.ttf)，實心版用 [google/material-design-icons](https://github.com/google/material-design-icons) 的 `font/MaterialIcons-Regular.ttf`（皆為 Apache-2.0）。
 2. 在 Roblox Studio 把這個字型檔上傳成 Font 資產，拿到它的 `rbxassetid`。
 3. 遊戲啟動時執行一次：
    ```lua

@@ -28,7 +28,9 @@ identifyexecutor = function() return "MockExecutor", "1.0" end
 local httpRequests = {}
 game.HttpGet = function(_, url)
 	table.insert(httpRequests, url)
-	if url:find("MaterialIcons%-Regular%.ttf") then
+	if url:find("MaterialIconsSharp") then
+		return "404: Not Found" -- exercises the fallback to Filled
+	elseif url:find("MaterialIcons%a*%-Regular%.ttf") then
 		return string.rep("x", 20000)
 	elseif url:find("%.png") then
 		return "\137PNG fake image bytes"
@@ -183,7 +185,15 @@ check(Env.GetGuiParent() == game:GetService("Players").LocalPlayer.PlayerGui, "E
 check(#Env.RandomName() == 12, "Env.RandomName length")
 
 local font = MD3.IconFont.Load("MD3")
-check(font ~= nil and files["MD3/MaterialIcons-Regular.ttf"] ~= nil, "IconFont did not download + load")
+check(font ~= nil and files["MD3/MaterialIconsOutlined-Regular.ttf"] ~= nil, "IconFont should default to Outlined")
+check(httpRequests[#httpRequests]:find("engnyg/Material%-Design%-3%-Roblox%-lua%-ui/main/assets/fonts/") ~= nil, "Outlined font should come from this repo")
+check(MD3.Icons.GetFont() == font, "IconFont.Load did not set the icon font")
+local round = MD3.IconFont.Load("MD3", "Round")
+check(round ~= nil and round ~= font and files["MD3/MaterialIconsRound-Regular.ttf"] ~= nil, "IconFont Round style")
+local sharp = MD3.IconFont.Load("MD3", "Sharp")
+check(sharp ~= nil and files["MD3/MaterialIcons-Regular.ttf"] ~= nil and files["MD3/MaterialIconsSharp-Regular.ttf"] == nil, "IconFont did not fall back to Filled")
+check(select(2, MD3.IconFont.Load("MD3", "Nope")) ~= nil, "unknown icon style should report an error")
+MD3.IconFont.Load("MD3", "Outlined")
 
 -- External images: HttpGet -> writefile -> getcustomasset (cached)
 local Assets = MD3.Assets
