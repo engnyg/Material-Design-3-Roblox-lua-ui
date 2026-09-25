@@ -16,12 +16,15 @@ local Window = MD3:CreateWindow({
     Logo = "https://raw.githubusercontent.com/<你>/<repo>/main/logo.png", -- 彩色 Logo 圖片（不套色，可省略）
     Mode = "Dark",                       -- "Light" | "Dark"
     ThemeColor = Color3.fromHex("#6750A4"), -- 主題色，整套配色由它生成
+    Preset = nil,                        -- 內建主題，例如 "NeverLose"（見下方主題編輯器）
     IconColor = nil,                     -- 所有圖標的顏色（Color3，可省略）
     TextColor = nil,                     -- 所有文字的顏色（Color3，可省略；說明文字會自動用淡一點的同色）
     ToggleKey = Enum.KeyCode.RightShift, -- 顯示／隱藏視窗
     ConfigFolder = "MyHub",              -- 設定檔存放資料夾（executor workspace）
     IconStyle = "Outlined",              -- 圖標樣式："Outlined"（預設）| "Filled" | "Round" | "Sharp"
     LoadingScreen = true,                -- 啟動時的載入動畫；false 關閉
+    Background = nil,                    -- 自訂背景圖片：網址／rbxassetid／素材 ID（見下方）
+    BackgroundTransparency = 0.4,        -- 背景圖片透明度（0 = 圖片完全不透明）
     Silent = false,                      -- true：安靜啟動（見下方）
     KeybindNotify = true,                -- 按自己設定的快捷鍵時跳通知；false 全部關閉
 })
@@ -87,7 +90,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 
 所有元件共通：`:Set(value, silent?)`、`:Get()`、`:OnChanged(fn)`、`:SetTitle()`、`:SetDescription()`、`:SetVisible()`、`:Destroy()`；有 `Flag` 的元件可從 `Window.Flags[flag]` 取得。為了方便移植其他 UI 庫的腳本，`AddX` 也都有 `CreateX` 別名（`CreateToggle`、`CreateSlider`…），`AddTextbox` / `AddBind` 也可用。
 
-`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SkipLoading`、`SetLoadingScreenEnabled`／`GetLoadingScreenEnabled`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
+`Window` 其他方法：`AddTab`、`SelectTab(tab | index | title)`、`AddThemeEditor(tab?)`、`SetIconStyle(style)`、`Notify{ Title, Content, Icon, Duration }`、`Dialog{ Title, Content, Buttons = {{ Title, Variant, Callback }} }`、`AddWatermark`／`AddKeybindList`／`AddIndicator`／`SetHUDVisible`／`SetHUDTransparency`（見下方 HUD）、`SetBackground`／`SetBackgroundTransparency`／`GetBackground`、`SkipLoading`、`SetLoadingScreenEnabled`／`GetLoadingScreenEnabled`、`SetVisible`、`Toggle`、`Minimize`、`SetToggleKey`、`SetTitle`、`SetSubtitle`、`Destroy`（別名 `Unload`）。
 
 ### HUD（浮水印、快捷鍵列表、狀態指示）
 
@@ -158,6 +161,27 @@ MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭
 
 `Assets.Resolve` 接受：網址（`http(s)://`）、`rbxassetid://…`／`rbxasset://…`／`rbxthumb://…`、純數字 ID（`123456` → `rbxassetid://123456`）、或 workspace 內已有的檔案路徑（`"MyHub/icon.png"`）。下載失敗（例如拿到 GitHub 的 404 HTML 頁）或 executor 不支援 `getcustomasset` 時回傳 `""`（不顯示圖片），不會丟錯。GitHub 圖片請用 `raw.githubusercontent.com/...` 或 `github.com/.../blob/main/xxx.png?raw=true` 這種直接下載的網址。
 
+### 自訂背景
+
+視窗可以放一張背景圖片，鋪滿整個視窗（圓角跟視窗一樣、自動裁切填滿），在所有內容後面：
+
+```lua
+local Window = MD3:CreateWindow({
+    Title = "My Hub",
+    Background = "https://raw.githubusercontent.com/<你>/<repo>/main/bg.png", -- 或 "rbxassetid://123"、123
+    BackgroundTransparency = 0.4,  -- 0 = 圖片完全不透明；越大越透出視窗原本的底色
+})
+
+Window:SetBackground("rbxassetid://123456", 0.3) -- 換圖（第二個參數可省略）；失敗會保留原本的背景並回傳 false, 原因
+Window:SetBackgroundTransparency(0.6)
+Window:SetBackground(nil)                        -- 移除
+local image, transparency = Window:GetBackground()
+```
+
+- 圖片來源跟其他 `Icon`／`Logo` 一樣走 `MD3.Assets`：網址會自動下載（`HttpGet` → `writefile` → `getcustomasset`），也能用 `rbxassetid://`、純數字 ID 或 workspace 內的檔案。`CreateWindow` 裡的網址在背景下載，不會卡住建立視窗。
+- **設定頁**的 Background 區塊：「Background image」輸入框（貼網址或 ID 後按 Enter；載入失敗會跳通知並還原）、「Image transparency」滑桿、「Remove background」按鈕。兩個值會存進設定檔（Flag `MD3_Background`／`MD3_BackgroundTransparency`）。
+- 右側內容區（Content panel）和各列（Rows）預設是不透明的，所以圖片主要從標題列、左側分頁欄和邊緣露出來；想讓圖片也透到內容後面，到主題編輯器把 **Content panel**、**Rows** 的透明度調高即可。
+
 ### 主題色、圖標、文字顏色
 
 最常調的三個顏色各有一個控制，設定頁 Appearance 區塊可以直接選色，程式裡也能設定：
@@ -174,7 +198,8 @@ MD3.Assets.Preload({ "https://.../a.png", "https://.../b.png" }) -- 腳本開頭
 
 `Window:AddSettingsTab()` 的設定頁裡有「Theme editor」區塊（也可以用 `Window:AddThemeEditor(tab)` 放進你自己的分頁；不給參數會另開一個「Theme」分頁）：
 
-- **Preset**：快速套用預設配色（Baseline／Blue／Teal／Green／Yellow／Orange／Red／Pink），等於換主題色（種子色）。
+- **Preset**：快速套用內建主題。Baseline／Blue／Teal／Green／Yellow／Orange／Red／Pink 只換主題色（你自訂的顏色保留）；**NeverLose** 是完整主題，照 [NeverLose](https://github.com/engnyg/NeverLose) 的配色：深色模式、近黑底色（`#08080D`）、石板灰外框（`#2D303A`）、白色文字、`#4E7FFC` 藍色強調色。NeverLose 的強調色直接等於主題色，所以套用後在 Appearance 換「Theme color」，按鈕、開關、選中分頁圖標會一起換成新顏色，底色與文字保持 NeverLose 風格。從 NeverLose 換到別的主題時，它設定的顏色會自動拿掉（你自己改過的保留）；「Reset custom colors」也會完全回到自動生成的配色。
+  - **LinoriaLib 的 8 套主題**也都內建了（照 [LinoriaLib](https://github.com/engnyg/LinoriaLib) `addons/ThemeManager.lua` 的顏色）：**Linoria**（它的「Default」，改名避免跟我們的預設混淆）、**BBot**、**Fatality**、**Jester**、**Mint**、**Tokyo Night**、**Ubuntu**、**Quartz**。它們跟 NeverLose 一樣是完整主題：MainColor 當視窗底色與各列、BackgroundColor 當內容區與輸入框、OutlineColor 當外框與選取底色、FontColor 當文字，次要文字 `#8E8E8E`、錯誤色 `#FF3232` 沿用 LinoriaLib 的固定色；強調色（AccentColor）等於主題色，換主題色時會跟著換。用法一樣：`Preset = "Tokyo Night"` 或 `Window.Theme:ApplyPreset("Fatality")`。程式裡：`MD3:CreateWindow({ Preset = "NeverLose" })`（同時給 `ThemeColor`／`Mode` 的話以它們為準）或 `Window.Theme:ApplyPreset("NeverLose")`；清單在 `MD3.Theme.Presets`。
 - **每個顏色一個選色器**：Primary、Secondary、Tertiary、Selection（選取底色）、Background、Content panel、Rows、Text、Secondary text、Outline、**Icons**（一般圖標）、**Accent icons**（標題列／通知圖標）、**Selected tab icon**（選中分頁的圖標）、Error。改過的顏色會標「custom」。
 - **Reset custom colors**：清掉自訂顏色，回到由主題色自動生成的配色。
 - **Copy theme**／**Import theme**：把主題（主題色、深淺模式、自訂顏色）複製成 JSON 分享，或貼上 JSON 匯入。

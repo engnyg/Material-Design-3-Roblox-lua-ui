@@ -439,8 +439,13 @@ check(Window.Flags.MD3_DarkMode.Value == false and Window.Flags.MD3_Accent.Value
 check(generatedPrimary ~= nil, "sanity")
 
 -- The editor UI itself (Settings > Theme editor)
-local editor = settings._sections[2]
-check(editor and editor._header.Text == "Theme editor", "settings tab has no theme editor section")
+local editor = nil
+for _, section in settings._sections do
+	if section._header and section._header.Text == "Theme editor" then
+		editor = section
+	end
+end
+check(editor ~= nil, "settings tab has no theme editor section")
 local function find(title)
 	for _, element in editor._elements do
 		if element._title and element._title.Text == title then
@@ -921,6 +926,142 @@ quietKeys:AddTab({ Title = "Keys" }):AddKeybind({ Title = "Dash", Default = "F10
 press(Enum.KeyCode.F10)
 check(toasts(quietKeys) == 0, "KeybindNotify = false should silence keybinds")
 quietKeys:Destroy()
+
+-- Custom background image
+local bgWin = MD3.CreateWindow({ Title = "Background Hub", Parent = host, ConfigFolder = "BgHub", Background = logoUrl })
+local bgImage = bgWin._background
+local bgSource, bgTransparency = bgWin:GetBackground()
+check(bgSource == logoUrl and bgImage.Visible and bgImage.Image ~= "", "CreateWindow Background was not loaded")
+check(near(bgTransparency, 0.4) and near(bgImage.ImageTransparency, 0.4), "default background transparency should be 0.4")
+check(bgImage.Parent == bgWin.Instance and bgImage.ZIndex < bgWin.Instance.TopBar.ZIndex, "the background should sit behind the window content")
+check(bgImage:FindFirstChild("UICorner") ~= nil and bgImage.Size == UDim2.fromScale(1, 1), "the background should fill the window with rounded corners")
+bgWin:SetBackgroundTransparency(0.7)
+check(near(bgImage.ImageTransparency, 0.7), "SetBackgroundTransparency failed")
+local shownImage = bgImage.Image
+local bgOk, bgErr = bgWin:SetBackground("https://example.com/notfound")
+check(not bgOk and bgErr ~= nil and bgImage.Image == shownImage and bgWin:GetBackground() == logoUrl, "a failed image should keep the current background")
+
+bgWin:AddSettingsTab()
+local bgInput = bgWin.Flags.MD3_Background
+local bgSlider = bgWin.Flags.MD3_BackgroundTransparency
+check(bgInput ~= nil and bgInput.Value == logoUrl and bgSlider ~= nil and bgSlider.Value == 70, "settings Background controls should show the current background")
+bgWin:SaveConfig("bg")
+bgInput:Set("")
+check(not bgImage.Visible and bgWin:GetBackground() == nil, "clearing the background field should remove the background")
+bgInput:Set("https://example.com/notfound")
+check(bgInput.Value == "" and not bgImage.Visible and toasts(bgWin) == 1, "a bad URL should notify and put the field back")
+bgSlider:Set(20)
+check(near(bgImage.ImageTransparency, 0.2), "the transparency slider did not apply")
+bgWin:SetBackground(logoUrl, 0.5)
+check(bgInput.Value == logoUrl and bgSlider.Value == 50, "SetBackground from code should update the settings controls")
+findElement(bgWin, "Remove background"):Fire()
+check(not bgImage.Visible and bgInput.Value == "", "Remove background failed")
+check(bgWin:LoadConfig("bg"), "loading the background config failed")
+check(bgImage.Visible and bgWin:GetBackground() == logoUrl and near(bgImage.ImageTransparency, 0.7), "the background was not restored from the config")
+bgWin:Destroy()
+
+-- Theme presets: NeverLose (a full preset: mode + pinned colors)
+local rgb = Color3.fromRGB
+local nlPreset = nil
+for _, preset in MD3.Theme.Presets do
+	if preset.Name == "NeverLose" then
+		nlPreset = preset
+	end
+end
+check(nlPreset ~= nil and nlPreset.Seed == "4E7FFC", "the NeverLose preset is missing")
+local pt = MD3.Theme.new(nil, "Light")
+check(pt:ApplyPreset("NeverLose"), "ApplyPreset(NeverLose) returned false")
+check(pt.Mode == "Dark" and pt.Seed:ToHex() == "4e7ffc", "NeverLose should be dark with a #4E7FFC seed")
+check(pt.Colors.Primary == rgb(78, 127, 252) and pt.Colors.Surface == rgb(8, 8, 13) and pt.Colors.SurfaceContainerHigh == rgb(20, 22, 27), "NeverLose accent / surfaces")
+check(pt.Colors.OnSurface == rgb(255, 255, 255) and pt.Colors.OnSurfaceVariant == rgb(186, 186, 186) and pt.Colors.OutlineVariant == rgb(45, 48, 58), "NeverLose text / outline")
+check(pt.Colors.HUDBackground == rgb(8, 8, 13) and pt.Colors.IconSelected == rgb(78, 127, 252) and pt.Colors.Error == rgb(255, 102, 105), "NeverLose HUD / selected icon / error")
+
+-- Changing the theme color replaces the pinned accent, keeps the surfaces
+pt:SetSeedColor(Color3.fromHex("B3261E"))
+check(pt.Colors.Primary == Color3.fromHex("B3261E"), "NeverLose's accent should be exactly the new theme color")
+check(pt.Colors.IconSelected == pt.Colors.Primary and pt.Colors.IconAccent == pt.Colors.Primary, "NeverLose's selected / accent icons should follow the new accent")
+check(pt.Colors.OnPrimary == rgb(255, 255, 255), "NeverLose keeps white on the accent")
+check(pt.Colors.Surface == rgb(8, 8, 13), "a new theme color should keep NeverLose's surfaces")
+
+-- Switching presets drops NeverLose's colors but keeps the user's own
+pt:ApplyPreset("NeverLose")
+local gold = rgb(255, 200, 0)
+pt:SetOverride("Icon", gold) -- replaces one of NeverLose's colors
+pt:SetOverride("Tertiary", gold) -- a role NeverLose doesn't touch
+pt:ApplyPreset("Green")
+local greenDark = MD3.Theme.new(Color3.fromHex("006E1C"), "Dark")
+check(pt.Colors.Surface == greenDark.Colors.Surface and pt.Colors.Primary == greenDark.Colors.Primary, "switching away from NeverLose left its colors behind")
+check(pt.Colors.Icon == gold and pt.Colors.Tertiary == gold, "switching presets dropped the user's own colors")
+check(not pt:ApplyPreset("Nope"), "an unknown preset should return false")
+
+local nlWin = MD3.CreateWindow({ Title = "NL Hub", Parent = host, Preset = "NeverLose" })
+check(nlWin.Theme.Colors.Surface == rgb(8, 8, 13) and nlWin.Instance.BackgroundColor3 == rgb(8, 8, 13), "CreateWindow Preset was not applied")
+nlWin:Destroy()
+local nlRed = MD3.CreateWindow({ Title = "NL Red", Parent = host, Preset = "NeverLose", Mode = "Light", ThemeColor = Color3.fromHex("B3261E") })
+check(nlRed.Theme.Mode == "Light" and nlRed.Theme.Seed:ToHex() == "b3261e", "explicit Mode / ThemeColor should win over the preset")
+check(nlRed.Theme.Colors.Primary == Color3.fromHex("B3261E") and nlRed.Theme.Colors.Surface == rgb(8, 8, 13), "ThemeColor with a preset: new accent, preset surfaces")
+nlRed:Destroy()
+
+local presetWin = MD3.CreateWindow({ Title = "Preset Hub", Parent = host })
+presetWin:AddSettingsTab()
+local presetDropdown = findElement(presetWin, "Preset")
+check(presetDropdown ~= nil, "the theme editor should have the Preset dropdown")
+presetDropdown:Set("NeverLose")
+check(presetWin.Theme.Colors.Surface == rgb(8, 8, 13) and presetWin.Instance.BackgroundColor3 == rgb(8, 8, 13), "the Preset dropdown did not apply NeverLose")
+-- The icon link survives a config round trip and a theme export / import
+local savedTheme = presetWin.Flags.MD3_ThemeOverrides:Get()
+check(savedTheme.Follow.IconSelected == "Primary", "the theme config should keep NeverLose's icon link")
+local reloaded = MD3.Theme.new()
+reloaded:SetOverrides(savedTheme.Colors, savedTheme.Transparency, savedTheme.Follow)
+reloaded:SetSeedColor(Color3.fromHex("006E1C"))
+check(reloaded.Colors.Primary == Color3.fromHex("006E1C") and reloaded.Colors.IconSelected == reloaded.Colors.Primary,
+	"after a config reload a new theme color should still become NeverLose's accent")
+check(reloaded.Colors.Surface == rgb(8, 8, 13), "after a config reload NeverLose's surfaces should stay")
+local imported = MD3.Theme.new()
+imported:Import(presetWin.Theme:Export())
+check(imported.Colors.IconSelected == rgb(78, 127, 252) and imported.Colors.Surface == rgb(8, 8, 13), "a NeverLose theme export / import lost colors")
+presetDropdown:Set("Blue")
+check(presetWin.Theme.Colors.Surface ~= rgb(8, 8, 13), "switching the dropdown away from NeverLose kept its colors")
+presetWin:Destroy()
+
+-- LinoriaLib's 8 built-in themes, copied from its addons/ThemeManager.lua
+-- ("Default" is "Linoria" here): { FontColor, MainColor, AccentColor, BackgroundColor, OutlineColor }
+local linoria = {
+	Linoria = { "ffffff", "1c1c1c", "0055ff", "141414", "323232" },
+	BBot = { "ffffff", "1e1e1e", "7e48a3", "232323", "141414" },
+	Fatality = { "ffffff", "1e1842", "c50754", "191335", "3c355d" },
+	Jester = { "ffffff", "242424", "db4467", "1c1c1c", "373737" },
+	Mint = { "ffffff", "242424", "3db488", "1c1c1c", "373737" },
+	["Tokyo Night"] = { "ffffff", "191925", "6759b3", "16161f", "323232" },
+	Ubuntu = { "ffffff", "3e3e3e", "e2581e", "323232", "191919" },
+	Quartz = { "ffffff", "232330", "426e87", "1d1b26", "27232f" },
+}
+local presetNames = {}
+for _, preset in MD3.Theme.Presets do
+	check(not presetNames[preset.Name], `duplicate preset name {preset.Name}`)
+	presetNames[preset.Name] = true
+end
+local hex = Color3.fromHex
+for name, c in linoria do
+	local lt = MD3.Theme.new(nil, "Light")
+	check(lt:ApplyPreset(name), `LinoriaLib theme {name} is missing`)
+	local col = lt.Colors
+	check(lt.Mode == "Dark" and lt.Seed:ToHex() == c[3] and col.Primary == hex(c[3]), `{name}: accent`)
+	check(col.OnSurface == hex(c[1]) and col.OnPrimary == hex(c[1]), `{name}: font color`)
+	check(col.Surface == hex(c[2]) and col.SurfaceContainerHigh == hex(c[2]) and col.HUDBackground == hex(c[2]), `{name}: main color`)
+	check(col.SurfaceContainerLow == hex(c[4]) and col.SurfaceContainerHighest == hex(c[4]), `{name}: background color`)
+	check(col.OutlineVariant == hex(c[5]) and col.SecondaryContainer == hex(c[5]), `{name}: outline color`)
+	check(col.OnSurfaceVariant == hex("8e8e8e") and col.Error == hex("ff3232") and col.IconSelected == col.Primary, `{name}: fixed colors`)
+end
+-- Switching between full presets replaces the whole look
+local switcher = MD3.Theme.new()
+switcher:ApplyPreset("Fatality")
+switcher:ApplyPreset("NeverLose")
+check(switcher.Colors.Surface == rgb(8, 8, 13) and switcher.Colors.SurfaceContainerLow == hex("0d1116"), "Fatality -> NeverLose should switch the surfaces")
+check(switcher.Colors.OnSurfaceVariant == rgb(186, 186, 186), "Fatality -> NeverLose should switch the secondary text")
+switcher:ApplyPreset("Tokyo Night")
+switcher:SetSeedColor(hex("3db488"))
+check(switcher.Colors.Primary == hex("3db488") and switcher.Colors.Surface == hex("191925"), "a new theme color on Tokyo Night: new accent, same surfaces")
 
 -- UIListLayout sorts by Name unless told otherwise, which scrambled the
 -- dialog (actions above the title). Every layout must sort by LayoutOrder.

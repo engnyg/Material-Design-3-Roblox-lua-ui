@@ -6,6 +6,7 @@
 		Subtitle = "v1.0",
 		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
 		ThemeColor = Color3.fromHex("#6750A4"), -- theme (seed) color the palette is generated from
+		Preset = nil,                      -- built-in theme preset, e.g. "NeverLose" (Theme.Presets)
 		IconColor = nil,                   -- color of every icon (Color3); default follows the theme
 		TextColor = nil,                   -- color of all text (Color3); secondary text follows it
 		AppIconColor = nil,                -- just the title-bar icon: theme role or Color3
@@ -19,6 +20,8 @@
 		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
 		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
+		Background = nil,                  -- background image: URL / rbxassetid / asset id (SetBackground)
+		BackgroundTransparency = 0.4,      -- how much of the window color shows through the image
 		Silent = false,                    -- true: no loading screen, start hidden, no automatic notifications
 		KeybindNotify = true,              -- toast when a keybind (AddKeybind) is used; not for the UI toggle key
 	})
@@ -54,6 +57,7 @@ local StateLayer = require(Root.Core.StateLayer)
 local Icons = require(Root.Core.Icons)
 local Dialog = require(Root.Components.Dialog)
 local Env = require(Root.Executor.Env)
+local Assets = require(Root.Executor.Assets)
 local IconImages = require(Root.Executor.IconImages)
 local Themer = require(script.Parent.Themer)
 local Config = require(script.Parent.Config)
@@ -159,6 +163,19 @@ function Window.new(props)
 	end
 
 	self.Theme = props.Theme or Theme.new(props.ThemeColor or props.Seed or props.Accent, props.Mode or "Dark")
+	-- A preset first; explicit ThemeColor / Mode / TextColor / IconColor win over it.
+	if props.Preset and not props.Theme then
+		if not self.Theme:ApplyPreset(props.Preset) then
+			warn(`[MD3] unknown theme preset "{props.Preset}"`)
+		end
+		local seed = props.ThemeColor or props.Seed or props.Accent
+		if seed then
+			self.Theme:SetSeedColor(seed)
+		end
+		if props.Mode then
+			self.Theme:SetMode(props.Mode)
+		end
+	end
 	if props.TextColor then
 		self.Theme:SetTextColor(props.TextColor)
 	end
@@ -201,6 +218,32 @@ function Window.new(props)
 	local uiScale = Create("UIScale") { Parent = main }
 	self.Instance = main
 	self._uiScale = uiScale
+
+	-- Custom background image (SetBackground): behind everything in the
+	-- window, rounded like it; its transparency lets the window color through.
+	local background = Create("ImageLabel") {
+		Name = "Background",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 0,
+		Visible = false,
+		Parent = main,
+	}
+	Shape.Corner(Shape.Large, background)
+	self._background = background
+	self._backgroundSource = nil
+	self._backgroundTransparency = math.clamp(props.BackgroundTransparency or 0.4, 0, 1)
+	background.ImageTransparency = self._backgroundTransparency
+	if props.Background then
+		-- Downloading a URL can take a moment; don't hold up CreateWindow.
+		task.spawn(function()
+			local ok, err = self:SetBackground(props.Background)
+			if not ok then
+				warn(`[MD3] background: {err}`)
+			end
+		end)
+	end
 
 	-- The shadow is a sibling of `main`, outside its UIScale, so it gets its
 	-- own UIScale kept in sync (otherwise it stays full size on phones).
@@ -870,6 +913,62 @@ function Window:GetHUDTransparency(): (number, number)
 	return self.Theme:GetTransparency("HUDBackground") or 0, self.Theme:GetTransparency("HUDText") or 0
 end
 
+--== Custom background ==--
+
+-- Background image behind the whole window: a URL, rbxassetid://, asset id
+-- or workspace file (anything Assets.Resolve takes); nil or "" removes it.
+-- `transparency` (0-1, optional) also sets how much of the window color
+-- shows through. If the image can't be loaded the current background is
+-- kept and this returns false plus the reason.
+function Window:SetBackground(image: string?, transparency: number?): (boolean, string?)
+	if transparency ~= nil then
+		self:SetBackgroundTransparency(transparency)
+	end
+	local background = self._background
+	if image == nil or image == "" then
+		self._backgroundSource = nil
+		background.Image = ""
+		background.Visible = false
+	else
+		local resolved = Assets.Resolve(image)
+		if resolved == "" then
+			return false, `could not load {image}`
+		end
+		self._backgroundSource = image
+		background.Image = resolved
+		background.Visible = true
+	end
+	self:_syncBackgroundControls()
+	return true
+end
+
+function Window:SetBackgroundTransparency(transparency: number)
+	self._backgroundTransparency = math.clamp(transparency, 0, 1)
+	self._background.ImageTransparency = self._backgroundTransparency
+	self:_syncBackgroundControls()
+end
+
+-- The current image (as given to SetBackground, nil when none) and its transparency.
+function Window:GetBackground(): (string?, number)
+	return self._backgroundSource, self._backgroundTransparency
+end
+
+-- Keeps the settings tab's Background controls showing the real state.
+function Window:_syncBackgroundControls()
+	local controls = self._backgroundControls
+	if not controls then
+		return
+	end
+	local source = self._backgroundSource or ""
+	if controls.Input.Value ~= source then
+		controls.Input:Set(source, true)
+	end
+	local percent = math.round(self._backgroundTransparency * 100)
+	if controls.Slider.Value ~= percent then
+		controls.Slider:Set(percent, true)
+	end
+end
+
 --== Configs ==--
 
 function Window:CanSaveConfigs(): boolean
@@ -1067,6 +1166,45 @@ function Window:AddSettingsTab(props)
 		end
 	end))
 
+	-- Custom background (saved in configs as MD3_Background / MD3_BackgroundTransparency).
+	local backgroundSection = tab:AddSection("Background")
+	local backgroundInput
+	backgroundInput = backgroundSection:AddInput({
+		Title = "Background image",
+		Description = "Image URL, rbxassetid:// or asset id. To see it behind the content too, make Content panel / Rows see-through in the theme editor",
+		Placeholder = "https://... or rbxassetid://...",
+		Default = self._backgroundSource or "",
+		Flag = "MD3_Background",
+		Callback = function(text)
+			local ok, err = self:SetBackground(text)
+			if not ok then
+				self:Notify({ Title = "Background unavailable", Content = err or "", Icon = "error" })
+				backgroundInput:Set(self._backgroundSource or "", true)
+			end
+		end,
+	})
+	local backgroundSlider = backgroundSection:AddSlider({
+		Title = "Image transparency",
+		Description = "How much of the window color shows through",
+		Min = 0,
+		Max = 100,
+		Step = 1,
+		Suffix = "%",
+		Default = math.round(self._backgroundTransparency * 100),
+		Flag = "MD3_BackgroundTransparency",
+		Callback = function(percent)
+			self:SetBackgroundTransparency(percent / 100)
+		end,
+	})
+	backgroundSection:AddButton({
+		Title = "Remove background",
+		Icon = "delete",
+		Callback = function()
+			self:SetBackground(nil)
+		end,
+	})
+	self._backgroundControls = { Input = backgroundInput, Slider = backgroundSlider }
+
 	self:AddThemeEditor(tab)
 
 	local interface = tab:AddSection("Interface")
@@ -1245,13 +1383,11 @@ function Window:AddThemeEditor(container)
 	end
 	section:AddDropdown({
 		Title = "Preset",
-		Description = "Base palette (custom colors below are kept)",
+		Description = "Palette to start from. Custom colors below are kept; NeverLose also sets its own dark colors",
 		Options = presetNames,
 		Callback = function(name)
-			for _, preset in Theme.Presets do
-				if preset.Name == name then
-					theme:SetSeedColor(Color3.fromHex(preset.Seed))
-				end
+			if name then
+				theme:ApplyPreset(name)
 			end
 		end,
 	})
@@ -1332,14 +1468,14 @@ function Window:AddThemeEditor(container)
 	-- generated colors too and stop them following the accent color).
 	-- Value: { Colors = { [role] = Color3 }, Transparency = { [role] = number } }
 	local function current()
-		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies() }
+		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies(), Follow = theme:GetFollow() }
 	end
 	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = current() }
 	function overridesFlag:Set(value)
 		if type(value) ~= "table" then
 			theme:ClearOverrides()
 		elseif value.Colors or value.Transparency then
-			theme:SetOverrides(value.Colors or {}, value.Transparency or {})
+			theme:SetOverrides(value.Colors or {}, value.Transparency or {}, value.Follow or {})
 		else
 			theme:SetOverrides(value, {}) -- configs saved before transparency existed
 		end

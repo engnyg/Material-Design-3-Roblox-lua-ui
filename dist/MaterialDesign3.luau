@@ -4414,6 +4414,31 @@ function Theme:_build()
 	colors.Icon = overrides.Icon or colors.OnSurfaceVariant
 	colors.IconAccent = overrides.IconAccent or overrides.Icon or colors.Primary
 	colors.IconSelected = overrides.IconSelected or overrides.Icon or colors.OnSecondaryContainer
+	-- Roles a preset links to another role, or to "Seed" (the theme color
+	-- itself), so they keep matching when it changes: NeverLose's accent is
+	-- exactly the theme color and its selected tab icon is the accent. An
+	-- override on the role still wins. A linked role's text color (ON_PAIRS)
+	-- gets a readable contrast color unless it is overridden too.
+	local function resolve(role, depth)
+		local source = self._follow[role]
+		if overrides[role] or not source or depth > 4 then
+			return colors[role]
+		elseif source == "Seed" then
+			return self.Seed
+		end
+		return resolve(source, depth + 1)
+	end
+	local linked = {}
+	for role in self._follow do
+		linked[role] = resolve(role, 0)
+	end
+	for role, color in linked do
+		colors[role] = color
+		local onRole = ON_PAIRS[role]
+		if onRole and not overrides[role] and not overrides[onRole] then
+			colors[onRole] = self:ContrastColor(color)
+		end
+	end
 	-- HUD (watermark, keybind list, indicators): colors follow the window's
 	-- rows / outline / text unless set, but transparency is the HUD's own.
 	colors.HUDBackground = overrides.HUDBackground or colors.SurfaceContainerHigh
@@ -4463,6 +4488,7 @@ function Theme.new(seed: Color3?, mode: string?)
 	self._palettes = buildPalettes(self.Seed)
 	self._overrides = {}
 	self._transparency = {}
+	self._follow = {}
 	self.Colors = self:_build()
 	self.Changed = Signal.new()
 	return self
@@ -4523,9 +4549,13 @@ function Theme:SetTransparency(role: string, transparency: number?)
 end
 
 -- Replaces all overrides at once: colors ({ [role] = Color3 }) and,
--- optionally, transparencies ({ [role] = number }; nil keeps the current).
-function Theme:SetOverrides(overrides: { [string]: Color3 }?, transparency: { [string]: number }?)
+-- optionally, transparencies ({ [role] = number }) and role links
+-- ({ [role] = sourceRole }, see Presets' Follow); nil keeps the current.
+function Theme:SetOverrides(overrides: { [string]: Color3 }?, transparency: { [string]: number }?, follow: { [string]: string }?)
 	self._overrides = table.clone(overrides or {})
+	if follow then
+		self._follow = table.clone(follow)
+	end
 	if transparency then
 		self._transparency = {}
 		for role, value in transparency do
@@ -4544,12 +4574,18 @@ function Theme:GetTransparencies(): { [string]: number }
 	return table.clone(self._transparency)
 end
 
+-- Role links set by a preset ({ IconSelected = "Primary" }).
+function Theme:GetFollow(): { [string]: string }
+	return table.clone(self._follow)
+end
+
 function Theme:IsOverridden(role: string): boolean
 	return self._overrides[role] ~= nil or self._transparency[role] ~= nil
 end
 
 function Theme:ClearOverrides()
-	self:SetOverrides({}, {})
+	self._presetOverrides = nil
+	self:SetOverrides({}, {}, {})
 end
 
 -- Plain table describing the theme (hex strings), e.g. to share as JSON:
@@ -4565,6 +4601,7 @@ function Theme:Export()
 		Mode = self.Mode,
 		Overrides = overrides,
 		Transparency = table.clone(self._transparency),
+		Follow = if next(self._follow) then table.clone(self._follow) else nil,
 	}
 end
 
@@ -4583,6 +4620,8 @@ function Theme:Import(data)
 		overrides[role] = Color3.fromHex(hex)
 	end
 	self._overrides = overrides
+	self._presetOverrides = nil
+	self._follow = table.clone(data.Follow or {})
 	self._transparency = {}
 	for role, value in data.Transparency or {} do
 		self._transparency[role] = cleanTransparency(value)
@@ -4609,7 +4648,9 @@ Theme.EditableRoles = {
 	{ Role = "Error", Name = "Error" },
 }
 
--- Seed colors for quick theme presets (M3 baseline + common hues).
+-- Theme presets. Most are just a seed color (M3 baseline + common hues);
+-- a "full" preset also sets the mode and pins colors (Overrides, hex) to
+-- reproduce a specific look. Apply with Theme:ApplyPreset(name).
 Theme.Presets = {
 	{ Name = "Baseline", Seed = "6750A4" },
 	{ Name = "Blue", Seed = "0061A4" },
@@ -4619,7 +4660,124 @@ Theme.Presets = {
 	{ Name = "Orange", Seed = "8B5000" },
 	{ Name = "Red", Seed = "B3261E" },
 	{ Name = "Pink", Seed = "984061" },
+	-- The colors of the NeverLose UI (github.com/engnyg/NeverLose): near-black
+	-- surfaces, slate outlines, white text, #4E7FFC accent.
+	{
+		Name = "NeverLose",
+		Seed = "4E7FFC",
+		Mode = "Dark",
+		Overrides = {
+			OnPrimary = "FFFFFF", -- white on the accent (switch thumb, buttons)
+			Surface = "08080D", -- window
+			SurfaceContainerLow = "0D1116", -- content panel
+			SurfaceContainerHigh = "14161B", -- rows, dropdown / tooltip popups
+			SurfaceContainerHighest = "1A1C24", -- input fields, keybind chips
+			SecondaryContainer = "272831", -- selection (option buttons)
+			OnSecondaryContainer = "FFFFFF",
+			OutlineVariant = "2D303A", -- outlines
+			OnSurface = "FFFFFF", -- text
+			OnSurfaceVariant = "BABABA", -- secondary text
+			Icon = "DFDFDF",
+			Error = "FF6669", -- red indicator
+			HUDBackground = "08080D", -- watermark
+		},
+		-- The accent (switches, slider, tab icon) is the theme color itself
+		-- rather than M3's lighter dark-mode tone, and the selected tab icon
+		-- and accent icons use it; all of them follow a new theme color.
+		Follow = { Primary = "Seed", IconSelected = "Primary", IconAccent = "Primary" },
+	},
 }
+
+-- LinoriaLib's built-in themes (github.com/engnyg/LinoriaLib,
+-- addons/ThemeManager.lua), in its order. Each is its five colors:
+-- { name, FontColor, MainColor, AccentColor, BackgroundColor, OutlineColor }.
+-- Its "Default" is called "Linoria" here so it isn't mistaken for ours.
+local LINORIA_THEMES = {
+	{ "Linoria", "ffffff", "1c1c1c", "0055ff", "141414", "323232" },
+	{ "BBot", "ffffff", "1e1e1e", "7e48a3", "232323", "141414" },
+	{ "Fatality", "ffffff", "1e1842", "c50754", "191335", "3c355d" },
+	{ "Jester", "ffffff", "242424", "db4467", "1c1c1c", "373737" },
+	{ "Mint", "ffffff", "242424", "3db488", "1c1c1c", "373737" },
+	{ "Tokyo Night", "ffffff", "191925", "6759b3", "16161f", "323232" },
+	{ "Ubuntu", "ffffff", "3e3e3e", "e2581e", "323232", "191919" },
+	{ "Quartz", "ffffff", "232330", "426e87", "1d1b26", "27232f" },
+}
+
+-- Maps a LinoriaLib theme onto the M3 roles: MainColor is the window and
+-- the rows (its element boxes), BackgroundColor the content panel (its
+-- groupboxes) and input fields, OutlineColor the outlines and selection.
+-- Secondary text and the error color are the ones LinoriaLib uses for every
+-- theme (DisabledTextColor, RiskColor). Like NeverLose, the accent is the
+-- theme color itself, so changing the theme color re-colors it.
+local function linoriaPreset(name, font, main, accent, background, outline)
+	return {
+		Name = name,
+		Seed = accent,
+		Mode = "Dark",
+		Overrides = {
+			OnPrimary = font,
+			Surface = main,
+			SurfaceContainerLow = background,
+			SurfaceContainerHigh = main,
+			SurfaceContainerHighest = background,
+			SecondaryContainer = outline,
+			OnSecondaryContainer = font,
+			OutlineVariant = outline,
+			OnSurface = font,
+			OnSurfaceVariant = "8e8e8e",
+			Error = "ff3232",
+			HUDBackground = main,
+		},
+		Follow = { Primary = "Seed", IconSelected = "Primary", IconAccent = "Primary" },
+	}
+end
+
+for _, spec in LINORIA_THEMES do
+	table.insert(Theme.Presets, linoriaPreset(table.unpack(spec)))
+end
+
+-- Applies a preset from Theme.Presets by name. A seed-only preset changes
+-- the theme color and keeps custom colors; a full preset also sets its mode
+-- and colors. Colors a previously applied full preset set, and that haven't
+-- been changed since, are removed first, so switching presets doesn't leave
+-- the old look behind. Returns false for an unknown name.
+function Theme:ApplyPreset(name: string): boolean
+	local preset = nil
+	for _, candidate in Theme.Presets do
+		if candidate.Name == name then
+			preset = candidate
+		end
+	end
+	if not preset then
+		return false
+	end
+
+	local overrides = table.clone(self._overrides)
+	for role, hex in self._presetOverrides or {} do
+		local color = overrides[role]
+		if color and color:ToHex() == string.lower(hex) then
+			overrides[role] = nil
+		end
+	end
+	self._presetOverrides = nil
+	if preset.Overrides then
+		for role, hex in preset.Overrides do
+			overrides[role] = Color3.fromHex(hex)
+		end
+		self._presetOverrides = preset.Overrides
+	end
+	self._follow = table.clone(preset.Follow or {})
+
+	self.Seed = Color3.fromHex(preset.Seed)
+	self._palettes = buildPalettes(self.Seed)
+	if preset.Mode then
+		self.Mode = preset.Mode
+	end
+	self._overrides = overrides
+	self.Colors = self:_build()
+	self.Changed:Fire(self)
+	return true
+end
 
 -- Surface tint overlay used to fake elevation (M3 uses a primary-tinted
 -- overlay on top of Surface instead of a pure drop shadow to convey elevation).
@@ -8828,6 +8986,7 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		Subtitle = "v1.0",
 		Icon = "widgets",                  -- Material icon name, or an image (URL / rbxassetid)
 		ThemeColor = Color3.fromHex("#6750A4"), -- theme (seed) color the palette is generated from
+		Preset = nil,                      -- built-in theme preset, e.g. "NeverLose" (Theme.Presets)
 		IconColor = nil,                   -- color of every icon (Color3); default follows the theme
 		TextColor = nil,                   -- color of all text (Color3); secondary text follows it
 		AppIconColor = nil,                -- just the title-bar icon: theme role or Color3
@@ -8841,6 +9000,8 @@ loaders[newNode("Window", N_Window)] = function(script, require)
 		Icons = true,                      -- load the Material icon images (false = BuilderIcons / symbols only)
 		IconStyle = "Outlined",            -- "Outlined" (default) | "Filled" | "Round" | "Sharp"
 		MobileButton = nil,                -- floating open/close button; default: on touch devices
+		Background = nil,                  -- background image: URL / rbxassetid / asset id (SetBackground)
+		BackgroundTransparency = 0.4,      -- how much of the window color shows through the image
 		Silent = false,                    -- true: no loading screen, start hidden, no automatic notifications
 		KeybindNotify = true,              -- toast when a keybind (AddKeybind) is used; not for the UI toggle key
 	})
@@ -8876,6 +9037,7 @@ local StateLayer = require(Root.Core.StateLayer)
 local Icons = require(Root.Core.Icons)
 local Dialog = require(Root.Components.Dialog)
 local Env = require(Root.Executor.Env)
+local Assets = require(Root.Executor.Assets)
 local IconImages = require(Root.Executor.IconImages)
 local Themer = require(script.Parent.Themer)
 local Config = require(script.Parent.Config)
@@ -8981,6 +9143,19 @@ function Window.new(props)
 	end
 
 	self.Theme = props.Theme or Theme.new(props.ThemeColor or props.Seed or props.Accent, props.Mode or "Dark")
+	-- A preset first; explicit ThemeColor / Mode / TextColor / IconColor win over it.
+	if props.Preset and not props.Theme then
+		if not self.Theme:ApplyPreset(props.Preset) then
+			warn(`[MD3] unknown theme preset "{props.Preset}"`)
+		end
+		local seed = props.ThemeColor or props.Seed or props.Accent
+		if seed then
+			self.Theme:SetSeedColor(seed)
+		end
+		if props.Mode then
+			self.Theme:SetMode(props.Mode)
+		end
+	end
 	if props.TextColor then
 		self.Theme:SetTextColor(props.TextColor)
 	end
@@ -9023,6 +9198,32 @@ function Window.new(props)
 	local uiScale = Create("UIScale") { Parent = main }
 	self.Instance = main
 	self._uiScale = uiScale
+
+	-- Custom background image (SetBackground): behind everything in the
+	-- window, rounded like it; its transparency lets the window color through.
+	local background = Create("ImageLabel") {
+		Name = "Background",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 0,
+		Visible = false,
+		Parent = main,
+	}
+	Shape.Corner(Shape.Large, background)
+	self._background = background
+	self._backgroundSource = nil
+	self._backgroundTransparency = math.clamp(props.BackgroundTransparency or 0.4, 0, 1)
+	background.ImageTransparency = self._backgroundTransparency
+	if props.Background then
+		-- Downloading a URL can take a moment; don't hold up CreateWindow.
+		task.spawn(function()
+			local ok, err = self:SetBackground(props.Background)
+			if not ok then
+				warn(`[MD3] background: {err}`)
+			end
+		end)
+	end
 
 	-- The shadow is a sibling of `main`, outside its UIScale, so it gets its
 	-- own UIScale kept in sync (otherwise it stays full size on phones).
@@ -9692,6 +9893,62 @@ function Window:GetHUDTransparency(): (number, number)
 	return self.Theme:GetTransparency("HUDBackground") or 0, self.Theme:GetTransparency("HUDText") or 0
 end
 
+--== Custom background ==--
+
+-- Background image behind the whole window: a URL, rbxassetid://, asset id
+-- or workspace file (anything Assets.Resolve takes); nil or "" removes it.
+-- `transparency` (0-1, optional) also sets how much of the window color
+-- shows through. If the image can't be loaded the current background is
+-- kept and this returns false plus the reason.
+function Window:SetBackground(image: string?, transparency: number?): (boolean, string?)
+	if transparency ~= nil then
+		self:SetBackgroundTransparency(transparency)
+	end
+	local background = self._background
+	if image == nil or image == "" then
+		self._backgroundSource = nil
+		background.Image = ""
+		background.Visible = false
+	else
+		local resolved = Assets.Resolve(image)
+		if resolved == "" then
+			return false, `could not load {image}`
+		end
+		self._backgroundSource = image
+		background.Image = resolved
+		background.Visible = true
+	end
+	self:_syncBackgroundControls()
+	return true
+end
+
+function Window:SetBackgroundTransparency(transparency: number)
+	self._backgroundTransparency = math.clamp(transparency, 0, 1)
+	self._background.ImageTransparency = self._backgroundTransparency
+	self:_syncBackgroundControls()
+end
+
+-- The current image (as given to SetBackground, nil when none) and its transparency.
+function Window:GetBackground(): (string?, number)
+	return self._backgroundSource, self._backgroundTransparency
+end
+
+-- Keeps the settings tab's Background controls showing the real state.
+function Window:_syncBackgroundControls()
+	local controls = self._backgroundControls
+	if not controls then
+		return
+	end
+	local source = self._backgroundSource or ""
+	if controls.Input.Value ~= source then
+		controls.Input:Set(source, true)
+	end
+	local percent = math.round(self._backgroundTransparency * 100)
+	if controls.Slider.Value ~= percent then
+		controls.Slider:Set(percent, true)
+	end
+end
+
 --== Configs ==--
 
 function Window:CanSaveConfigs(): boolean
@@ -9889,6 +10146,45 @@ function Window:AddSettingsTab(props)
 		end
 	end))
 
+	-- Custom background (saved in configs as MD3_Background / MD3_BackgroundTransparency).
+	local backgroundSection = tab:AddSection("Background")
+	local backgroundInput
+	backgroundInput = backgroundSection:AddInput({
+		Title = "Background image",
+		Description = "Image URL, rbxassetid:// or asset id. To see it behind the content too, make Content panel / Rows see-through in the theme editor",
+		Placeholder = "https://... or rbxassetid://...",
+		Default = self._backgroundSource or "",
+		Flag = "MD3_Background",
+		Callback = function(text)
+			local ok, err = self:SetBackground(text)
+			if not ok then
+				self:Notify({ Title = "Background unavailable", Content = err or "", Icon = "error" })
+				backgroundInput:Set(self._backgroundSource or "", true)
+			end
+		end,
+	})
+	local backgroundSlider = backgroundSection:AddSlider({
+		Title = "Image transparency",
+		Description = "How much of the window color shows through",
+		Min = 0,
+		Max = 100,
+		Step = 1,
+		Suffix = "%",
+		Default = math.round(self._backgroundTransparency * 100),
+		Flag = "MD3_BackgroundTransparency",
+		Callback = function(percent)
+			self:SetBackgroundTransparency(percent / 100)
+		end,
+	})
+	backgroundSection:AddButton({
+		Title = "Remove background",
+		Icon = "delete",
+		Callback = function()
+			self:SetBackground(nil)
+		end,
+	})
+	self._backgroundControls = { Input = backgroundInput, Slider = backgroundSlider }
+
 	self:AddThemeEditor(tab)
 
 	local interface = tab:AddSection("Interface")
@@ -10067,13 +10363,11 @@ function Window:AddThemeEditor(container)
 	end
 	section:AddDropdown({
 		Title = "Preset",
-		Description = "Base palette (custom colors below are kept)",
+		Description = "Palette to start from. Custom colors below are kept; NeverLose also sets its own dark colors",
 		Options = presetNames,
 		Callback = function(name)
-			for _, preset in Theme.Presets do
-				if preset.Name == name then
-					theme:SetSeedColor(Color3.fromHex(preset.Seed))
-				end
+			if name then
+				theme:ApplyPreset(name)
 			end
 		end,
 	})
@@ -10154,14 +10448,14 @@ function Window:AddThemeEditor(container)
 	-- generated colors too and stop them following the accent color).
 	-- Value: { Colors = { [role] = Color3 }, Transparency = { [role] = number } }
 	local function current()
-		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies() }
+		return { Colors = theme:GetOverrides(), Transparency = theme:GetTransparencies(), Follow = theme:GetFollow() }
 	end
 	local overridesFlag = { Type = "ThemeOverrides", Flag = "MD3_ThemeOverrides", Value = current() }
 	function overridesFlag:Set(value)
 		if type(value) ~= "table" then
 			theme:ClearOverrides()
 		elseif value.Colors or value.Transparency then
-			theme:SetOverrides(value.Colors or {}, value.Transparency or {})
+			theme:SetOverrides(value.Colors or {}, value.Transparency or {}, value.Follow or {})
 		else
 			theme:SetOverrides(value, {}) -- configs saved before transparency existed
 		end
