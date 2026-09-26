@@ -46,7 +46,7 @@ local Window = MD3:CreateWindow({
 	SearchPlaceholder = "Search settings...",
 	Backdrop = true,            -- Fullscreen dark dimming overlay with fade tween
 	Snowfall = true,            -- Snow particle effects behind the UI
-	CustomCursor = true,        -- Custom theme-colored mouse cursor
+	CustomCursor = false,       -- false to use standard mouse; true for custom colored cursor
 	Transparency = 0.15,        -- Default glassmorphism window transparency
 })
 

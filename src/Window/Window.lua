@@ -237,6 +237,7 @@ function Window.new(props)
 		Size = UDim2.fromScale(1, 1),
 		Position = UDim2.fromScale(0, 0),
 		ZIndex = 0,
+		Active = false,
 		Visible = false,
 		Parent = gui,
 	}
@@ -253,6 +254,7 @@ function Window.new(props)
 		Position = UDim2.fromScale(0, 0),
 		ClipsDescendants = true,
 		ZIndex = 0,
+		Active = false,
 		Visible = false,
 		Parent = gui,
 	}
@@ -346,6 +348,7 @@ function Window.new(props)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Size = UDim2.fromOffset(0, 0),
+		Active = false,
 		Visible = false,
 		Parent = cursorGui,
 	}
@@ -366,6 +369,7 @@ function Window.new(props)
 		Position = UDim2.fromOffset(-31, -32),
 		Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowFarCursor.png",
 		ImageColor3 = self.Theme.Colors.Primary or Color3.fromRGB(220, 205, 255),
+		Active = false,
 		ZIndex = 1000000,
 		Parent = cursorContainer,
 	}
@@ -373,7 +377,17 @@ function Window.new(props)
 	self._cursorPointer = cursorPointer
 
 	self._maid:GiveTask(RunService.RenderStepped:Connect(function()
-		if cursorContainer.Visible then
+		if self.Visible and not self.Minimized then
+			if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			end
+			if not (self._cursorSettings and self._cursorSettings.Enabled) then
+				if not UserInputService.MouseIconEnabled then
+					UserInputService.MouseIconEnabled = true
+				end
+			end
+		end
+		if cursorContainer and cursorContainer.Visible then
 			local mousePos = UserInputService:GetMouseLocation()
 			cursorContainer.Position = UDim2.fromOffset(mousePos.X, mousePos.Y)
 		end
@@ -1341,14 +1355,17 @@ function Window:SetCustomCursor(enabled: boolean, scale: number?)
 end
 
 function Window:_updateCursorState(open: boolean)
-	if not (self._cursorSettings and self._cursorSettings.Enabled) then
-		if self._cursorContainer then self._cursorContainer.Visible = false end
-		UserInputService.MouseIconEnabled = true
-		return
-	end
 	if open then
-		UserInputService.MouseIconEnabled = false
-		if self._cursorContainer then self._cursorContainer.Visible = true end
+		pcall(function()
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		end)
+		if self._cursorSettings and self._cursorSettings.Enabled then
+			UserInputService.MouseIconEnabled = false
+			if self._cursorContainer then self._cursorContainer.Visible = true end
+		else
+			if self._cursorContainer then self._cursorContainer.Visible = false end
+			UserInputService.MouseIconEnabled = true
+		end
 	else
 		if self._cursorContainer then self._cursorContainer.Visible = false end
 		UserInputService.MouseIconEnabled = true
@@ -2307,6 +2324,11 @@ function Window:Destroy()
 	if registry.Windows and registry.Windows[self._registryKey] == self then
 		registry.Windows[self._registryKey] = nil
 	end
+
+	pcall(function()
+		UserInputService.MouseIconEnabled = true
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end)
 end
 Window.Unload = Window.Destroy
 
