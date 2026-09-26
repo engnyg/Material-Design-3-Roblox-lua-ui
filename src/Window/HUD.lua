@@ -325,6 +325,7 @@ function Watermark:AddBlock(iconOrProps, text: string?)
 	local frame = Create("Frame") {
 		Name = "Block",
 		BackgroundTransparency = 1,
+		Active = true,
 		Size = UDim2.fromOffset(0, 24),
 		AutomaticSize = Enum.AutomaticSize.X,
 		LayoutOrder = self._order * 2,
@@ -823,6 +824,7 @@ function HUD.Indicator(window, props)
 	local chip = paint.Surface({
 		Name = props.Text or "Indicator",
 		BorderSizePixel = 0,
+		Active = true,
 		Size = UDim2.fromOffset(0, 30),
 		AutomaticSize = Enum.AutomaticSize.X,
 		LayoutOrder = window._hudIndicatorCount,
