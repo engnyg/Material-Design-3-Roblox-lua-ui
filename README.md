@@ -50,7 +50,38 @@ Window:LoadAutoloadConfig()  -- 放在腳本最後，載入「自動載入」設
 Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Icon = "check_circle" })
 ```
 
-完整示範（每種元件、對話框、通知、設定頁）見 [`examples/executor.lua`](examples/executor.lua)。
+完整示範（每種元件、對話框、通知、設定頁、hub_v3 次分類與特效）見 [`examples/executor.lua`](examples/executor.lua)。
+
+### Hub v3 視覺與進階架構
+
+本版本完整整合了 `hub_v3.luau` 的所有現代介面架構與視覺特效，全部透過原生配置開啟：
+
+- **頂部滑動導航欄**：分頁按鈕居中橫向排列，當切換 Tab 時自動以滑動膠囊（`NavSlideIndicator`）平滑過渡。
+- **次級分類與左右雙欄佈局 (`AddSubTabs`)**：
+  ```lua
+  local MainSubs = MainTab:AddSubTabs({ "Overview", "Statistics", "Info" })
+  local LeftSec = MainSubs.Overview:AddLeftSection("General")
+  local RightSec = MainSubs.Overview:AddRightSection("System")
+  ```
+  自動生成左欄（LeftCol）、右欄（RightCol）與垂直分隔線（DividerLine）。
+- **即時設定搜尋框與懸浮結果跳轉 (`Search = true`)**：
+  頂部左側提供即時搜尋輸入框。所有加入的元件（Toggle、Slider、Dropdown 等）會**自動註冊搜尋索引與路徑**，點擊搜尋結果自動切換到目標分頁／次分類並跳轉滾動、附帶紫光脈衝動畫（Highlight）。
+- **指數平滑拖拽跟隨 (`Draggable`)**：視窗採用平滑阻尼跟隨，且具備螢幕邊界自動夾緊（Clamp）防脫出機制。
+- **全螢幕柔和暗化遮罩 (`Backdrop = true`)**：UI 顯示與切換時平滑淡入／淡出背景遮罩；可用 `Window:SetBackdrop(enabled, transparency)` 動態開關。
+- **落雪粒子系統 (`Snowfall = true`)**：UI 背後呈現左右物理擺動的飄雪特效；可用 `Window:SetSnowfall(enabled, count, speed, size)` 動態調節。
+- **客製化主題彩色游標 (`CustomCursor = true`)**：UI 開啟時自動隱藏原生游標並顯示隨主題色 Tint 的光標；可用 `Window:SetCustomCursor(enabled, scale)` 動態控制。
+- **即時縮放與透明度**：支援 `Window:SetScale(scale)`、`Window:SetTransparency(transparency)`。
+- **增強型 Watermark HUD**：
+  ```lua
+  local Watermark = Window:AddWatermark({ Title = "My Hub", Position = "TopLeft" })
+  Watermark:AddAvatar()    -- 玩家頭像圓像
+  Watermark:AddPlayer()    -- 玩家使用者名稱
+  Watermark:AddGame()      -- 遊戲名稱
+  Watermark:AddExecutor()  -- 執行器名稱
+  Watermark:AddFPS()       -- 即時 FPS
+  Watermark:AddPing()      -- 即時 Ping
+  Watermark:AddClock()     -- 即時時鐘
+  ```
 
 ### 視窗功能
 

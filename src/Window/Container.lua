@@ -31,8 +31,33 @@ local Container = {}
 function Container.extend(class)
 	for name, builder in BUILDERS do
 		local function add(self, props)
-			local element = builder(self, props or {})
+			props = props or {}
+			local element = builder(self, props)
 			table.insert(self._elements, element)
+
+			local window = self._window or (self._tab and self._tab._window)
+			local elementName = props.Title or props.Text or props.Name
+			if window and window._registerSearchable and elementName and elementName ~= "" and name ~= "Divider" then
+				local tab = self._tab or self
+				local subTab = self._subTab
+				local pathParts = { tab.Title or "Tab" }
+				if subTab then
+					table.insert(pathParts, subTab)
+				end
+				if self.Title and self.Title ~= "" and self ~= tab then
+					table.insert(pathParts, self.Title)
+				end
+				table.insert(pathParts, elementName)
+
+				window:_registerSearchable({
+					name = elementName,
+					path = table.concat(pathParts, " > "),
+					tab = tab,
+					subTab = subTab,
+					target = element.Instance,
+				})
+			end
+
 			return element
 		end
 		class["Add" .. name] = add

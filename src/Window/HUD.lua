@@ -236,6 +236,18 @@ function HUD.Watermark(window, props)
 			Emphasis = true,
 		})
 	end
+	if props.Avatar then
+		self:AddAvatar()
+	end
+	if props.Player then
+		self:AddPlayer()
+	end
+	if props.Game then
+		self:AddGame()
+	end
+	if props.Executor then
+		self:AddExecutor()
+	end
 	if props.FPS then
 		self:AddFPS()
 	end
@@ -246,6 +258,52 @@ function HUD.Watermark(window, props)
 		self:AddClock(type(props.Clock) == "string" and props.Clock or nil)
 	end
 	return self
+end
+
+function Watermark:AddAvatar()
+	local player = Players.LocalPlayer
+	local userId = player and player.UserId or 0
+	return self:AddBlock({
+		Icon = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=48&h=48",
+		Text = player and player.Name or "Player",
+		Tint = false,
+	})
+end
+
+function Watermark:AddPlayer()
+	local player = Players.LocalPlayer
+	return self:AddBlock({
+		Icon = "account_circle",
+		Text = player and player.Name or "Unknown",
+	})
+end
+
+function Watermark:AddGame()
+	local MarketplaceService = game:GetService("MarketplaceService")
+	local gameName = "Roblox"
+	pcall(function()
+		local info = MarketplaceService:GetProductInfo(game.PlaceId)
+		if info and info.Name then
+			gameName = info.Name
+		end
+	end)
+	return self:AddBlock({
+		Icon = "sports_esports",
+		Text = gameName,
+	})
+end
+
+function Watermark:AddExecutor()
+	local executor = "Unknown"
+	if typeof(identifyexecutor) == "function" then
+		executor = identifyexecutor()
+	elseif typeof(getexecutorname) == "function" then
+		executor = getexecutorname()
+	end
+	return self:AddBlock({
+		Icon = "terminal",
+		Text = executor,
+	})
 end
 
 -- AddBlock(icon, text) or AddBlock({ Icon, Text, IconColor, TextColor, Callback, Tint }).

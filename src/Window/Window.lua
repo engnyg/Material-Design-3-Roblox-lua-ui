@@ -44,6 +44,7 @@
 ]]
 local ContentProvider = game:GetService("ContentProvider")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -227,6 +228,157 @@ function Window.new(props)
 	gui.Parent = props.Parent or Env.GetGuiParent()
 	self.Gui = gui
 
+	--== Backdrop (dark dimming overlay) ==--
+	local backdrop = Create("Frame") {
+		Name = "Backdrop",
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromScale(0, 0),
+		ZIndex = 0,
+		Visible = false,
+		Parent = gui,
+	}
+	self._backdrop = backdrop
+	self._backdropEnabled = props.Backdrop ~= false
+	self._backdropTransparency = props.BackdropTransparency or 0.55
+
+	--== Snowfall Particle Effect ==--
+	local snowContainer = Create("Frame") {
+		Name = "SnowContainer",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromScale(0, 0),
+		ClipsDescendants = true,
+		ZIndex = 0,
+		Visible = false,
+		Parent = gui,
+	}
+	self._snowContainer = snowContainer
+	self._snowEnabled = props.Snowfall == true
+	self._snowSettings = {
+		SpeedMultiplier = props.SnowSpeed or 1.0,
+		BaseSize = props.SnowBaseSize or 5,
+		Count = props.SnowCount or 45,
+	}
+	self._snowflakes = {}
+
+	local function getScreenBounds()
+		local cam = workspace.CurrentCamera
+		local vp = cam and cam.ViewportSize or Vector2.new(1920, 1080)
+		return math.max(vp.X, 800), math.max(vp.Y, 600)
+	end
+
+	local function createFlake(i)
+		local sw, sh = getScreenBounds()
+		local flake = Create("Frame") {
+			Name = "Flake_" .. i,
+			BorderSizePixel = 0,
+			BackgroundColor3 = Color3.fromRGB(240, 245, 255),
+			Parent = snowContainer,
+			[1] = Create("UICorner") { CornerRadius = UDim.new(1, 0) },
+		}
+		local sizeRatio = math.random(70, 140) / 100
+		local curSize = math.clamp(math.round(self._snowSettings.BaseSize * sizeRatio), 2, 30)
+		flake.Size = UDim2.fromOffset(curSize, curSize)
+		flake.BackgroundTransparency = math.random(25, 70) / 100
+		local posX = math.random(0, sw)
+		local posY = math.random(0, sh)
+		flake.Position = UDim2.fromOffset(posX, posY)
+		return {
+			inst = flake,
+			x = posX,
+			y = posY,
+			sizeRatio = sizeRatio,
+			baseSpeed = math.random(40, 100),
+			swayAmp = math.random(15, 35),
+			swayFreq = math.random(8, 20) / 10,
+			phase = math.random() * math.pi * 2,
+		}
+	end
+	self._createFlake = createFlake
+
+	for i = 1, self._snowSettings.Count do
+		table.insert(self._snowflakes, createFlake(i))
+	end
+
+	local snowElapsed = 0
+	self._maid:GiveTask(RunService.RenderStepped:Connect(function(dt)
+		if not (self.Visible and not self.Minimized and self._snowEnabled) then
+			return
+		end
+		snowElapsed += dt
+		local sw, sh = getScreenBounds()
+		for _, f in ipairs(self._snowflakes) do
+			f.y += f.baseSpeed * self._snowSettings.SpeedMultiplier * dt
+			if f.y > sh + 10 then
+				f.y = -10
+				f.x = math.random(0, sw)
+			end
+			local currentX = (f.x + math.sin(snowElapsed * f.swayFreq + f.phase) * f.swayAmp) % sw
+			f.inst.Position = UDim2.fromOffset(currentX, f.y)
+		end
+	end))
+
+	--== Custom Cursor ==--
+	local cursorSettings = {
+		Enabled = props.CustomCursor == true,
+		Scale = props.CursorScale or 100,
+	}
+	self._cursorSettings = cursorSettings
+
+	local cursorGui = Create("ScreenGui") {
+		Name = "CustomCursorGui",
+		ResetOnSpawn = false,
+		DisplayOrder = 999999,
+		IgnoreGuiInset = true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = gui.Parent or Env.GetGuiParent(),
+	}
+	Env.ProtectGui(cursorGui)
+	self._cursorGui = cursorGui
+	self._maid:GiveTask(cursorGui)
+
+	local cursorContainer = Create("Frame") {
+		Name = "CursorContainer",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(0, 0),
+		Visible = false,
+		Parent = cursorGui,
+	}
+	self._cursorContainer = cursorContainer
+
+	local cursorScale = Create("UIScale") {
+		Name = "CursorScale",
+		Scale = cursorSettings.Scale / 100,
+		Parent = cursorContainer,
+	}
+	self._cursorScale = cursorScale
+
+	local cursorPointer = Create("ImageLabel") {
+		Name = "CursorPointer",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(64, 64),
+		Position = UDim2.fromOffset(-31, -32),
+		Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowFarCursor.png",
+		ImageColor3 = self.Theme.Colors.Primary or Color3.fromRGB(220, 205, 255),
+		ZIndex = 1000000,
+		Parent = cursorContainer,
+	}
+	themer:Bind(cursorPointer, { ImageColor3 = "Primary" })
+	self._cursorPointer = cursorPointer
+
+	self._maid:GiveTask(RunService.RenderStepped:Connect(function()
+		if cursorContainer.Visible then
+			local mousePos = UserInputService:GetMouseLocation()
+			cursorContainer.Position = UDim2.fromOffset(mousePos.X, mousePos.Y)
+		end
+	end))
+
 	--== Main surface ==--
 	local main = Create("Frame") {
 		Name = "Main",
@@ -405,6 +557,7 @@ function Window.new(props)
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -12, 0.5, 0),
 		Size = UDim2.fromOffset(80, 36),
+		Visible = props.Actions ~= false,
 		Parent = topBar,
 		[1] = Create("UIListLayout") {
 			FillDirection = Enum.FillDirection.Horizontal,
@@ -441,14 +594,258 @@ function Window.new(props)
 		return button
 	end
 
-	barButton("minimize", 1, function()
-		self:Minimize()
-	end)
-	barButton("close", 2, function()
-		self:_confirmClose()
-	end)
+	if props.MinimizeButton ~= false then
+		barButton("minimize", 1, function()
+			self:Minimize()
+		end)
+	end
+	if props.CloseButton ~= false then
+		barButton("close", 2, function()
+			self:_confirmClose()
+		end)
+	end
 
 	makeDraggable(self._maid, topBar, main)
+
+	--== TopBar Search Box & Settings Search Dropdown ==--
+	self._searchableItems = {}
+	if props.Search ~= false then
+		local searchBox = Create("Frame") {
+			Name = "TopLeftSearchBox",
+			Size = UDim2.new(0, 210, 0, 32),
+			Position = UDim2.new(0, 140, 0.5, 0),
+			AnchorPoint = Vector2.new(0, 0.5),
+			BackgroundColor3 = self.Theme.Colors.SurfaceContainerHigh or Color3.fromRGB(30, 28, 38),
+			BackgroundTransparency = 0.2,
+			BorderSizePixel = 0,
+			ZIndex = 5,
+			Parent = topBar,
+			[1] = Create("UICorner") { CornerRadius = UDim.new(0, 8) },
+			[2] = Create("UIStroke") {
+				Color = self.Theme.Colors.OutlineVariant or Color3.fromRGB(65, 60, 80),
+				Thickness = 1,
+				Transparency = 0.4,
+			},
+		}
+		themer:Bind(searchBox, { BackgroundColor3 = "SurfaceContainerHigh" })
+
+		local searchIcon = Create("ImageLabel") {
+			Name = "SearchIcon",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(16, 16),
+			Position = UDim2.new(0, 8, 0.5, 0),
+			AnchorPoint = Vector2.new(0, 0.5),
+			Image = "rbxasset://textures/ui/SearchIcon.png",
+			ImageColor3 = self.Theme.Colors.OnSurfaceVariant or Color3.fromRGB(160, 155, 175),
+			ZIndex = 6,
+			Parent = searchBox,
+		}
+		themer:Bind(searchIcon, { ImageColor3 = "OnSurfaceVariant" })
+
+		local searchInput = Create("TextBox") {
+			Name = "SearchInput",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, -56, 1, 0),
+			Position = UDim2.new(0, 30, 0, 0),
+			PlaceholderText = props.SearchPlaceholder or "Search settings...",
+			PlaceholderColor3 = Color3.fromRGB(140, 135, 155),
+			Text = "",
+			TextColor3 = self.Theme.Colors.OnSurface or Color3.fromRGB(240, 240, 255),
+			TextSize = 13,
+			Font = Enum.Font.Gotham,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ClearTextOnFocus = false,
+			ZIndex = 6,
+			Parent = searchBox,
+		}
+		themer:Bind(searchInput, { TextColor3 = "OnSurface" })
+
+		local clearBtn = Create("TextButton") {
+			Name = "ClearBtn",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(20, 20),
+			Position = UDim2.new(1, -6, 0.5, 0),
+			AnchorPoint = Vector2.new(1, 0.5),
+			Text = "x",
+			TextColor3 = Color3.fromRGB(150, 145, 165),
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			Visible = false,
+			ZIndex = 6,
+			Parent = searchBox,
+		}
+
+		local searchDropdown = Create("Frame") {
+			Name = "SearchDropdown",
+			Size = UDim2.new(0, 260, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Position = UDim2.new(0, 140, 0, TOP_BAR_HEIGHT - 4),
+			BackgroundColor3 = self.Theme.Colors.SurfaceContainerHigh or Color3.fromRGB(24, 22, 30),
+			BorderSizePixel = 0,
+			ZIndex = 60,
+			Visible = false,
+			Parent = main,
+			[1] = Create("UICorner") { CornerRadius = UDim.new(0, 10) },
+			[2] = Create("UIStroke") {
+				Color = self.Theme.Colors.OutlineVariant or Color3.fromRGB(70, 65, 85),
+				Thickness = 1,
+				Transparency = 0.3,
+			},
+			[3] = Create("UIListLayout") {
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, 4),
+			},
+			[4] = Create("UIPadding") {
+				PaddingTop = UDim.new(0, 6),
+				PaddingBottom = UDim.new(0, 6),
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+			},
+		}
+		themer:Bind(searchDropdown, { BackgroundColor3 = "SurfaceContainerHigh" })
+
+		clearBtn.Activated:Connect(function()
+			searchInput.Text = ""
+			clearBtn.Visible = false
+			searchDropdown.Visible = false
+		end)
+
+		local function performJump(item)
+			searchDropdown.Visible = false
+			if item.tab then
+				self:SelectTab(item.tab)
+			end
+			task.wait(0.08)
+			if item.subTab and item.tab then
+				if item.tab._subTabs and item.tab._subTabs[item.subTab] and item.tab._subTabs[item.subTab].Select then
+					item.tab._subTabs[item.subTab].Select()
+				elseif item.tab.Instance then
+					local subBtn = item.tab.Instance:FindFirstChild("SubBtn_" .. item.subTab, true)
+					if subBtn and typeof(getconnections) == "function" then
+						for _, conn in ipairs(getconnections(subBtn.Activated)) do
+							conn:Fire()
+						end
+					end
+				end
+			end
+			task.wait(0.08)
+			local targetInst = item.target
+			if targetInst and targetInst:IsDescendantOf(game) then
+				local page = item.tab and item.tab.Instance
+				if page and page:IsA("ScrollingFrame") then
+					local relY = targetInst.AbsolutePosition.Y - page.AbsolutePosition.Y + page.CanvasPosition.Y
+					page.CanvasPosition = Vector2.new(0, math.max(0, relY - 40))
+				end
+				local highlight = Instance.new("UIStroke")
+				highlight.Name = "SearchHighlight"
+				highlight.Color = self.Theme.Colors.Primary or Color3.fromRGB(180, 160, 255)
+				highlight.Thickness = 2
+				highlight.Transparency = 0
+				highlight.Parent = targetInst
+				TweenService:Create(highlight, TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Transparency = 1,
+					Thickness = 4,
+				}):Play()
+				task.delay(1.3, function()
+					pcall(function() highlight:Destroy() end)
+				end)
+			end
+		end
+
+		searchInput:GetPropertyChangedSignal("Text"):Connect(function()
+			local query = searchInput.Text:lower():match("^%s*(.-)%s*$")
+			clearBtn.Visible = (searchInput.Text ~= "")
+			if not query or query == "" then
+				searchDropdown.Visible = false
+				return
+			end
+
+			local matches = {}
+			for _, item in ipairs(self._searchableItems) do
+				if (item.name and string.find(item.name:lower(), query, 1, true)) or (item.path and string.find(item.path:lower(), query, 1, true)) then
+					table.insert(matches, item)
+					if #matches >= 8 then break end
+				end
+			end
+
+			for _, child in ipairs(searchDropdown:GetChildren()) do
+				if child:IsA("TextButton") or child:IsA("Frame") then
+					child:Destroy()
+				end
+			end
+
+			if #matches == 0 then
+				local empty = Create("TextLabel") {
+					Name = "EmptyLabel",
+					BackgroundTransparency = 1,
+					Size = UDim2.new(1, 0, 0, 28),
+					Text = "No settings found",
+					TextColor3 = Color3.fromRGB(140, 135, 155),
+					Font = Enum.Font.Gotham,
+					TextSize = 12,
+					ZIndex = 61,
+					Parent = searchDropdown,
+				}
+				searchDropdown.Visible = true
+				return
+			end
+
+			for i, match in ipairs(matches) do
+				local resBtn = Create("TextButton") {
+					Name = "Result_" .. i,
+					BackgroundTransparency = 1,
+					Size = UDim2.new(1, 0, 0, 36),
+					LayoutOrder = i,
+					Text = "",
+					AutoButtonColor = false,
+					ZIndex = 61,
+					Parent = searchDropdown,
+					[1] = Create("UICorner") { CornerRadius = UDim.new(0, 6) },
+				}
+				local titleLbl = Create("TextLabel") {
+					Name = "Title",
+					BackgroundTransparency = 1,
+					Position = UDim2.new(0, 8, 0, 3),
+					Size = UDim2.new(1, -16, 0, 16),
+					Text = match.name or "Setting",
+					Font = Enum.Font.GothamBold,
+					TextSize = 13,
+					TextColor3 = Color3.fromRGB(230, 230, 245),
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					ZIndex = 62,
+					Parent = resBtn,
+				}
+				local pathLbl = Create("TextLabel") {
+					Name = "Path",
+					BackgroundTransparency = 1,
+					Position = UDim2.new(0, 8, 0, 19),
+					Size = UDim2.new(1, -16, 0, 14),
+					Text = match.path or "",
+					Font = Enum.Font.Gotham,
+					TextSize = 10,
+					TextColor3 = Color3.fromRGB(150, 145, 170),
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					ZIndex = 62,
+					Parent = resBtn,
+				}
+
+				resBtn.MouseEnter:Connect(function()
+					resBtn.BackgroundTransparency = 0.8
+					resBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+				end)
+				resBtn.MouseLeave:Connect(function()
+					resBtn.BackgroundTransparency = 1
+				end)
+				resBtn.Activated:Connect(function()
+					performJump(match)
+				end)
+			end
+
+			searchDropdown.Visible = true
+		end)
+	end
 
 	--== Body: navigation drawer + content ==--
 	local body = Create("Frame") {
@@ -464,36 +861,79 @@ function Window.new(props)
 		Name = "Navigation",
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Size = UDim2.new(0, NAV_WIDTH, 1, 0),
+		Position = UDim2.new(0, 16, 0, 4),
+		Size = UDim2.new(1, -32, 0, 42),
 		CanvasSize = UDim2.new(),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
 		ScrollBarThickness = 0,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		ZIndex = 3,
 		Parent = body,
 		[1] = Create("UIPadding") {
-			PaddingLeft = UDim.new(0, 12),
-			PaddingRight = UDim.new(0, 12),
-			PaddingBottom = UDim.new(0, 12),
+			PaddingLeft = UDim.new(0, 0),
+			PaddingRight = UDim.new(0, 0),
+			PaddingTop = UDim.new(0, 0),
+			PaddingBottom = UDim.new(0, 0),
 		},
 		[2] = Create("UIListLayout") {
-			FillDirection = Enum.FillDirection.Vertical,
+			FillDirection = Enum.FillDirection.Horizontal,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 4),
+			Padding = UDim.new(0, 8),
+			VerticalAlignment = Enum.VerticalAlignment.Center,
 		},
 	}
 	self._navList = navList
 
+	-- Floating sliding indicator pill inside body (behind navList buttons)
+	local navPill = Create("Frame") {
+		Name = "NavSlideIndicator",
+		BackgroundColor3 = self.Theme.Colors.SecondaryContainer or Color3.fromRGB(74, 68, 88),
+		BorderSizePixel = 0,
+		ZIndex = 1,
+		Active = false,
+		Visible = false,
+		Parent = body,
+	}
+	Shape.Corner(Shape.Full, navPill)
+	local pillStroke = Create("UIStroke") {
+		Thickness = 1.2,
+		Color = self.Theme.Colors.Primary or Color3.fromRGB(208, 188, 255),
+		Transparency = 0.5,
+		Parent = navPill,
+	}
+	themer:Bind(navPill, { BackgroundColor3 = "SecondaryContainer" })
+	themer:Bind(pillStroke, { Color = "Primary" })
+	self._navPill = navPill
+
 	local pages = Create("Frame") {
 		Name = "Pages",
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(NAV_WIDTH, 0),
-		Size = UDim2.new(1, -NAV_WIDTH - 12, 1, -12),
+		Position = UDim2.new(0, 16, 0, 50),
+		Size = UDim2.new(1, -32, 1, -60),
 		ClipsDescendants = true,
 		Parent = body,
 	}
 	Shape.Corner(Shape.Large, pages)
 	themer:Bind(pages, { BackgroundColor3 = "SurfaceContainerLow" })
 	self._pages = pages
+
+	self._maid:GiveTask(navList:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		if self._currentActiveBtn and self._currentActiveBtn:IsDescendantOf(game) and self._navPill and self._body then
+			local relX = self._currentActiveBtn.AbsolutePosition.X - self._body.AbsolutePosition.X
+			local relY = self._currentActiveBtn.AbsolutePosition.Y - self._body.AbsolutePosition.Y
+			self._navPill.Position = UDim2.fromOffset(relX, relY)
+			self._navPill.Size = UDim2.fromOffset(self._currentActiveBtn.AbsoluteSize.X, self._currentActiveBtn.AbsoluteSize.Y)
+		end
+	end))
+
+	self._maid:GiveTask(body:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if self._currentActiveBtn and self._currentActiveBtn:IsDescendantOf(game) and self._navPill and self._body then
+			local relX = self._currentActiveBtn.AbsolutePosition.X - self._body.AbsolutePosition.X
+			local relY = self._currentActiveBtn.AbsolutePosition.Y - self._body.AbsolutePosition.Y
+			self._navPill.Position = UDim2.fromOffset(relX, relY)
+			self._navPill.Size = UDim2.fromOffset(self._currentActiveBtn.AbsoluteSize.X, self._currentActiveBtn.AbsoluteSize.Y)
+		end
+	end))
 
 	--== Resize handle (bottom-right corner) ==--
 	local grip = Create("TextButton") {
@@ -727,11 +1167,43 @@ end
 
 --== Tabs ==--
 
+function Window:_slideToTab(tab, instant)
+	if not (tab and tab._button and self._navPill and self._body) then
+		return
+	end
+	self._currentActiveBtn = tab._button
+	local btn = tab._button
+	local relX = btn.AbsolutePosition.X - self._body.AbsolutePosition.X
+	local relY = btn.AbsolutePosition.Y - self._body.AbsolutePosition.Y
+	local targetPos = UDim2.fromOffset(relX, relY)
+	local targetSize = UDim2.fromOffset(btn.AbsoluteSize.X, btn.AbsoluteSize.Y)
+
+	if self._pillTween then
+		self._pillTween:Cancel()
+		self._pillTween = nil
+	end
+
+	self._navPill.Visible = true
+	if instant then
+		self._navPill.Position = targetPos
+		self._navPill.Size = targetSize
+	else
+		self._pillTween = TweenService:Create(self._navPill, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Position = targetPos,
+			Size = targetSize,
+		})
+		self._pillTween:Play()
+	end
+end
+
 function Window:AddTab(props)
 	local tab = Tab.new(self, props)
 	table.insert(self.Tabs, tab)
 	if not self.SelectedTab then
 		self:SelectTab(tab)
+		task.defer(function()
+			self:_slideToTab(tab, true)
+		end)
 	end
 	return tab
 end
@@ -758,6 +1230,7 @@ function Window:SelectTab(target)
 		previous:_setActive(false)
 	end
 	tab:_setActive(true)
+	self:_slideToTab(tab, false)
 end
 
 --== Visibility ==--
@@ -773,9 +1246,136 @@ function Window:SetVisible(visible: boolean)
 		local target = self._uiScale.Scale
 		self._uiScale.Scale = target * 0.94
 		TweenService:Create(self._uiScale, Motion.Emphasized(Motion.Duration.Medium2), { Scale = target }):Play()
+
+		if self._backdropEnabled and self._backdrop then
+			self._backdrop.Visible = true
+			TweenService:Create(self._backdrop, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				BackgroundTransparency = self._backdropTransparency,
+			}):Play()
+		end
+		if self._snowEnabled and self._snowContainer then
+			self._snowContainer.Visible = true
+		end
+		self:_updateCursorState(true)
 	else
 		main.Visible = false
+		if self._backdrop then
+			local tw = TweenService:Create(self._backdrop, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				BackgroundTransparency = 1,
+			})
+			tw:Play()
+			tw.Completed:Connect(function()
+				if not self.Visible and self._backdrop then
+					self._backdrop.Visible = false
+				end
+			end)
+		end
+		if self._snowContainer then
+			self._snowContainer.Visible = false
+		end
+		self:_updateCursorState(false)
 	end
+end
+
+function Window:_registerSearchable(item)
+	table.insert(self._searchableItems, item)
+end
+
+function Window:AddSearchableSetting(item)
+	self:_registerSearchable(item)
+end
+
+function Window:SetBackdrop(enabled: boolean, transparency: number?)
+	self._backdropEnabled = enabled
+	if transparency then
+		self._backdropTransparency = transparency
+	end
+	if self._backdrop then
+		if enabled and self.Visible and not self.Minimized then
+			self._backdrop.Visible = true
+			TweenService:Create(self._backdrop, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				BackgroundTransparency = self._backdropTransparency,
+			}):Play()
+		else
+			self._backdrop.Visible = false
+		end
+	end
+end
+
+function Window:SetSnowfall(enabled: boolean, count: number?, speed: number?, size: number?)
+	self._snowEnabled = enabled
+	if count and self._snowSettings then
+		self._snowSettings.Count = count
+		while #self._snowflakes < count do
+			table.insert(self._snowflakes, self._createFlake(#self._snowflakes + 1))
+		end
+		while #self._snowflakes > count do
+			local f = table.remove(self._snowflakes)
+			if f and f.inst then f.inst:Destroy() end
+		end
+	end
+	if speed and self._snowSettings then self._snowSettings.SpeedMultiplier = speed end
+	if size and self._snowSettings then
+		self._snowSettings.BaseSize = size
+		for _, f in ipairs(self._snowflakes) do
+			local curSize = math.clamp(math.round(size * (f.sizeRatio or 1)), 2, 30)
+			f.inst.Size = UDim2.fromOffset(curSize, curSize)
+		end
+	end
+	if self._snowContainer then
+		self._snowContainer.Visible = enabled and self.Visible and not self.Minimized
+	end
+end
+
+function Window:SetCustomCursor(enabled: boolean, scale: number?)
+	if self._cursorSettings then
+		self._cursorSettings.Enabled = enabled
+		if scale then
+			self._cursorSettings.Scale = scale
+			if self._cursorScale then
+				self._cursorScale.Scale = scale / 100
+			end
+		end
+	end
+	self:_updateCursorState(self.Visible and not self.Minimized)
+end
+
+function Window:_updateCursorState(open: boolean)
+	if not (self._cursorSettings and self._cursorSettings.Enabled) then
+		if self._cursorContainer then self._cursorContainer.Visible = false end
+		UserInputService.MouseIconEnabled = true
+		return
+	end
+	if open then
+		UserInputService.MouseIconEnabled = false
+		if self._cursorContainer then self._cursorContainer.Visible = true end
+	else
+		if self._cursorContainer then self._cursorContainer.Visible = false end
+		UserInputService.MouseIconEnabled = true
+	end
+end
+
+function Window:SetScale(scale: number)
+	if self._uiScale then
+		self._uiScale.Scale = scale
+	end
+end
+
+function Window:GetScale(): number
+	return self._uiScale and self._uiScale.Scale or 1
+end
+
+function Window:SetTransparency(transparency: number)
+	if self.Instance then
+		self.Instance.BackgroundTransparency = transparency
+	end
+	if self._pages then
+		self._pages.BackgroundTransparency = math.clamp(transparency + 0.1, 0, 1)
+	end
+end
+
+function Window:GetTransparency(): number
+	return self.Instance and self.Instance.BackgroundTransparency or 0
 end
 
 function Window:Toggle()
