@@ -64,6 +64,8 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
   local RightSec = MainSubs.Overview:AddRightSection("System")
   ```
   自動生成左欄（LeftCol）、右欄（RightCol）與垂直分隔線（DividerLine）。
+  也可以一次加一個：`MainTab:AddSubTab("Overview")`（`{ Columns = 1 }` 為單欄全寬），用 `MainTab:SelectSubTab("Overview")` 切換。
+- **每個 Section 自動成為次分類 (`SectionsAsSubTabs = true`)**：在 `CreateWindow` 設定後，每個 `Tab:AddSection(title)` 都會變成一個以該標題命名的單欄次分類（同名的 Section 放在同一個次分類）；個別 Tab 可用 `AddTab({ ..., SectionsAsSubTabs = false })` 關閉。
 - **即時設定搜尋框與懸浮結果跳轉 (`Search = true`)**：
   頂部左側提供即時搜尋輸入框。所有加入的元件（Toggle、Slider、Dropdown 等）會**自動註冊搜尋索引與路徑**，點擊搜尋結果自動切換到目標分頁／次分類並跳轉滾動、附帶紫光脈衝動畫（Highlight）。
 - **指數平滑拖拽跟隨 (`Draggable`)**：視窗採用平滑阻尼跟隨，且具備螢幕邊界自動夾緊（Clamp）防脫出機制。

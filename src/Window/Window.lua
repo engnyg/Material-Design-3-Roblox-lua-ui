@@ -135,6 +135,8 @@ function Window.new(props)
 	props = props or {}
 	local self = setmetatable({}, Window)
 	self.Title = props.Title or props.Name or "MD3"
+	-- Every tab's AddSection becomes its own sub-tab (Tab props can override).
+	self._sectionsAsSubTabs = props.SectionsAsSubTabs == true
 	self.Flags = {}
 	self.Tabs = {}
 	self.SelectedTab = nil

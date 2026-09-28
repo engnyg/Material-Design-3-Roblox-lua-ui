@@ -44,7 +44,7 @@ function Container.extend(class)
 				if subTab then
 					table.insert(pathParts, subTab)
 				end
-				if self.Title and self.Title ~= "" and self ~= tab then
+				if self.Title and self.Title ~= "" and self ~= tab and self.Title ~= subTab then
 					table.insert(pathParts, self.Title)
 				end
 				table.insert(pathParts, elementName)

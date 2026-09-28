@@ -5864,7 +5864,7 @@ function Container.extend(class)
 				if subTab then
 					table.insert(pathParts, subTab)
 				end
-				if self.Title and self.Title ~= "" and self ~= tab then
+				if self.Title and self.Title ~= "" and self ~= tab and self.Title ~= subTab then
 					table.insert(pathParts, self.Title)
 				end
 				table.insert(pathParts, elementName)
@@ -9187,6 +9187,11 @@ function Tab.new(window, props)
 	-- nil = follow the theme's Icon / IconSelected roles; a role name or a
 	-- Color3 pins the icon color (selected or not).
 	self._iconColor = props.IconColor
+	if props.SectionsAsSubTabs ~= nil then
+		self._sectionsAsSubTabs = props.SectionsAsSubTabs
+	else
+		self._sectionsAsSubTabs = window._sectionsAsSubTabs
+	end
 	local themer = window._themer
 	local theme = window.Theme
 
@@ -9318,29 +9323,100 @@ function Tab:_setActive(active: boolean)
 	self:_paint()
 end
 
-function Tab:AddSection(title: string?)
+-- Creates a Section in `holder` (the page, or a sub-tab column).
+function Tab:_addSectionIn(holder, title: string?, subName: string?)
+	local origHolder = self._holder
+	self._holder = holder
 	local section = Section.new(self, title)
+	self._holder = origHolder
+	section._subTab = subName
 	table.insert(self._sections, section)
 	if self._window and self._window._registerSearchable then
+		local path = { self.Title }
+		if subName then
+			table.insert(path, subName)
+		end
+		if not subName or (title or "Section") ~= subName then
+			table.insert(path, title or "Section")
+		end
 		self._window:_registerSearchable({
 			name = title or "Section",
-			path = self.Title .. " > " .. (title or "Section"),
+			path = table.concat(path, " > "),
 			tab = self,
+			subTab = subName,
 			target = section.Instance,
 		})
 	end
 	return section
 end
+
+-- With SectionsAsSubTabs (on the tab or the window) every section gets its
+-- own sub-tab named after it; sections sharing a title share the sub-tab.
+function Tab:AddSection(title: string?)
+	if self._sectionsAsSubTabs then
+		local sub = self:AddSubTab(title or "Section", { Columns = 1 })
+		local section = sub:AddSection(title)
+		if section._header then
+			section._header.Visible = false -- the sub-tab button already shows it
+		end
+		return section
+	end
+	return self:_addSectionIn(self._holder, title, nil)
+end
 Tab.CreateSection = Tab.AddSection
 
-function Tab:AddSubTabs(names: { string } | string, ...)
-	local list = if type(names) == "table" then names else { names, ... }
-	local page = self.Instance
-	local window = self._window
-	local themer = window._themer
-	local theme = window.Theme
+local function paintSubButton(theme, btn, selected)
+	local c = theme.Colors
+	local stroke = btn:FindFirstChildOfClass("UIStroke")
+	if selected then
+		btn.BackgroundColor3 = c.SecondaryContainer or Color3.fromRGB(74, 68, 88)
+		btn.TextColor3 = c.OnSecondaryContainer or Color3.fromRGB(232, 222, 248)
+		if stroke then
+			stroke.Transparency = 0.2
+			stroke.Color = c.Primary or Color3.fromRGB(208, 188, 255)
+			stroke.Thickness = 1.5
+		end
+	else
+		btn.BackgroundColor3 = c.SurfaceContainerHigh or Color3.fromRGB(36, 33, 43)
+		btn.TextColor3 = c.OnSurfaceVariant or Color3.fromRGB(202, 196, 208)
+		if stroke then
+			stroke.Transparency = 0.6
+			stroke.Color = c.OutlineVariant or Color3.fromRGB(73, 69, 79)
+			stroke.Thickness = 1
+		end
+	end
+end
 
-	local subNav = Create("ScrollingFrame") {
+function Tab:_paintSubTabs()
+	local theme = self._window.Theme
+	for i, sub in ipairs(self._subTabs) do
+		local selected = i == self._selectedSub
+		sub.Holder.Visible = selected
+		paintSubButton(theme, sub.Button, selected)
+	end
+end
+
+-- Shows a sub-tab, by name or index.
+function Tab:SelectSubTab(which)
+	local subs = self._subTabs
+	if not subs then
+		return
+	end
+	local index = which
+	if type(which) ~= "number" then
+		index = table.find(subs, subs[which])
+	end
+	if index and subs[index] then
+		self._selectedSub = index
+		self:_paintSubTabs()
+	end
+end
+
+function Tab:_ensureSubNav()
+	if self._subNav then
+		return
+	end
+	self._subNav = Create("ScrollingFrame") {
 		Name = "SubNavBar",
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -9350,7 +9426,7 @@ function Tab:AddSubTabs(names: { string } | string, ...)
 		ScrollBarThickness = 0,
 		ScrollingDirection = Enum.ScrollingDirection.X,
 		LayoutOrder = 0,
-		Parent = page,
+		Parent = self.Instance,
 		[1] = Create("UIListLayout") {
 			FillDirection = Enum.FillDirection.Horizontal,
 			SortOrder = Enum.SortOrder.LayoutOrder,
@@ -9362,55 +9438,43 @@ function Tab:AddSubTabs(names: { string } | string, ...)
 			PaddingRight = UDim.new(0, 4),
 		},
 	}
+	self._subTabs = {} -- array of sub-tabs, also keyed by name
+	self._window._maid:GiveTask(self._window.Theme.Changed:Connect(function()
+		self:_paintSubTabs()
+	end))
+end
 
-	local subHolders = {}
-	local subButtons = {}
-	local subTabApi = {}
-
-	local function selectSub(idx)
-		for i, holder in ipairs(subHolders) do
-			holder.Visible = (i == idx)
-		end
-		for i, btn in ipairs(subButtons) do
-			local isSel = (i == idx)
-			local stroke = btn:FindFirstChildOfClass("UIStroke")
-			if isSel then
-				btn.BackgroundColor3 = theme.Colors.SecondaryContainer or Color3.fromRGB(74, 68, 88)
-				btn.TextColor3 = theme.Colors.OnSecondaryContainer or Color3.fromRGB(232, 222, 248)
-				if stroke then
-					stroke.Transparency = 0.2
-					stroke.Color = theme.Colors.Primary or Color3.fromRGB(208, 188, 255)
-					stroke.Thickness = 1.5
-				end
-			else
-				btn.BackgroundColor3 = theme.Colors.SurfaceContainerHigh or Color3.fromRGB(36, 33, 43)
-				btn.TextColor3 = theme.Colors.OnSurfaceVariant or Color3.fromRGB(202, 196, 208)
-				if stroke then
-					stroke.Transparency = 0.6
-					stroke.Color = theme.Colors.OutlineVariant or Color3.fromRGB(73, 69, 79)
-					stroke.Thickness = 1
-				end
-			end
-		end
+-- Adds one sub-tab (a button in the sub-nav bar + its own content area).
+-- opts.Columns = 1 gives a single full-width column; the default is two
+-- columns (AddLeftSection / AddRightSection). Adding an existing name
+-- returns that sub-tab.
+function Tab:AddSubTab(name: string, opts)
+	opts = opts or {}
+	self:_ensureSubNav()
+	local subs = self._subTabs
+	if subs[name] then
+		return subs[name]
 	end
+	local index = #subs + 1
+	local themer = self._window._themer
+	local twoColumns = opts.Columns ~= 1
 
-	for i, name in ipairs(list) do
-		local holder = Create("Frame") {
-			Name = "SubCategory_" .. name,
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			LayoutOrder = i,
-			Visible = (i == 1),
-			Parent = page,
-		}
+	local holder = Create("Frame") {
+		Name = "SubCategory_" .. name,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = index,
+		Visible = false,
+		Parent = self.Instance,
+	}
 
-		-- Left Column
-		local leftCol = Create("Frame") {
-			Name = "LeftCol",
+	local function column(colName, size, position)
+		return Create("Frame") {
+			Name = colName,
 			BackgroundTransparency = 1,
-			Size = UDim2.new(0.5, -8, 0, 0),
-			Position = UDim2.new(0, 0, 0, 0),
+			Size = size,
+			Position = position,
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Parent = holder,
 			[1] = Create("UIListLayout") {
@@ -9419,124 +9483,91 @@ function Tab:AddSubTabs(names: { string } | string, ...)
 				Padding = UDim.new(0, 8),
 			},
 		}
+	end
 
-		-- Divider line
-		local divider = Create("Frame") {
+	local leftCol, rightCol, divider
+	if twoColumns then
+		leftCol = column("LeftCol", UDim2.new(0.5, -8, 0, 0), UDim2.new())
+		divider = Create("Frame") {
 			Name = "DividerLine",
 			Size = UDim2.new(0, 1, 1, 0),
 			Position = UDim2.new(0.5, 0, 0, 0),
-			BackgroundColor3 = theme.Colors.OutlineVariant,
+			BackgroundColor3 = self._window.Theme.Colors.OutlineVariant,
 			BackgroundTransparency = 0.4,
 			BorderSizePixel = 0,
 			ZIndex = 2,
 			Parent = holder,
 		}
 		themer:Bind(divider, { BackgroundColor3 = "OutlineVariant" })
-
-		-- Right Column
-		local rightCol = Create("Frame") {
-			Name = "RightCol",
-			BackgroundTransparency = 1,
-			Size = UDim2.new(0.5, -8, 0, 0),
-			Position = UDim2.new(0.5, 8, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Parent = holder,
-			[1] = Create("UIListLayout") {
-				FillDirection = Enum.FillDirection.Vertical,
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, 8),
-			},
-		}
-
-		table.insert(subHolders, holder)
-
-		local charCount = 0
-		for _ in utf8.graphemes(name) do charCount += 1 end
-		local btnWidth = math.clamp(charCount * 9 + 32, 84, 160)
-
-		local btn = Create("TextButton") {
-			Name = "SubBtn_" .. name,
-			AutoButtonColor = false,
-			Text = name,
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			Size = UDim2.new(0, btnWidth, 0, 32),
-			LayoutOrder = i,
-			BorderSizePixel = 0,
-			Parent = subNav,
-		}
-		Shape.Corner(Shape.Full, btn)
-		local btnStroke = Create("UIStroke") {
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-			Thickness = 1,
-			Parent = btn,
-		}
-
-		btn.Activated:Connect(function()
-			selectSub(i)
-		end)
-		table.insert(subButtons, btn)
-
-		local subObj = {
-			Name = name,
-			Holder = holder,
-			Left = leftCol,
-			Right = rightCol,
-			Divider = divider,
-			Button = btn,
-			Select = function()
-				selectSub(i)
-			end,
-			AddLeftSection = function(_, title)
-				local origHolder = self._holder
-				self._holder = leftCol
-				local section = self:AddSection(title)
-				section._subTab = name
-				self._holder = origHolder
-				if window and window._registerSearchable then
-					window:_registerSearchable({
-						name = title or "Section",
-						path = self.Title .. " > " .. name .. " > " .. (title or "Section"),
-						tab = self,
-						subTab = name,
-						target = section.Instance,
-					})
-				end
-				return section
-			end,
-			AddRightSection = function(_, title)
-				local origHolder = self._holder
-				self._holder = rightCol
-				local section = self:AddSection(title)
-				section._subTab = name
-				self._holder = origHolder
-				if window and window._registerSearchable then
-					window:_registerSearchable({
-						name = title or "Section",
-						path = self.Title .. " > " .. name .. " > " .. (title or "Section"),
-						tab = self,
-						subTab = name,
-						target = section.Instance,
-					})
-				end
-				return section
-			end,
-			AddSection = function(subSelf, title, side)
-				if side == "Right" or side == "right" then
-					return subSelf:AddRightSection(title)
-				else
-					return subSelf:AddLeftSection(title)
-				end
-			end,
-		}
-
-		subTabApi[name] = subObj
-		table.insert(subTabApi, subObj)
+		rightCol = column("RightCol", UDim2.new(0.5, -8, 0, 0), UDim2.new(0.5, 8, 0, 0))
+	else
+		leftCol = column("Column", UDim2.new(1, 0, 0, 0), UDim2.new())
+		rightCol = leftCol
 	end
 
-	self._subTabs = subTabApi
-	selectSub(1)
-	return subTabApi
+	local charCount = 0
+	for _ in utf8.graphemes(name) do charCount += 1 end
+	local btn = Create("TextButton") {
+		Name = "SubBtn_" .. name,
+		AutoButtonColor = false,
+		Text = name,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		Size = UDim2.new(0, math.clamp(charCount * 9 + 32, 84, 160), 0, 32),
+		LayoutOrder = index,
+		BorderSizePixel = 0,
+		Parent = self._subNav,
+	}
+	Shape.Corner(Shape.Full, btn)
+	Create("UIStroke") {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Thickness = 1,
+		Parent = btn,
+	}
+	self._window._maid:GiveTask(btn.Activated:Connect(function()
+		self:SelectSubTab(index)
+	end))
+
+	local tab = self
+	local sub = {
+		Name = name,
+		Holder = holder,
+		Left = leftCol,
+		Right = rightCol,
+		Divider = divider,
+		Button = btn,
+	}
+	function sub.Select()
+		tab:SelectSubTab(index)
+	end
+	function sub:AddLeftSection(title)
+		return tab:_addSectionIn(leftCol, title, name)
+	end
+	function sub:AddRightSection(title)
+		return tab:_addSectionIn(rightCol, title, name)
+	end
+	function sub:AddSection(title, side)
+		if side == "Right" or side == "right" then
+			return self:AddRightSection(title)
+		end
+		return self:AddLeftSection(title)
+	end
+
+	subs[name] = sub
+	table.insert(subs, sub)
+	if index == 1 then
+		self._selectedSub = 1
+	end
+	self:_paintSubTabs()
+	return sub
+end
+
+function Tab:AddSubTabs(names: { string } | string, ...)
+	local list = if type(names) == "table" then names else { names, ... }
+	for _, name in ipairs(list) do
+		self:AddSubTab(name)
+	end
+	return self._subTabs
 end
 Tab.CreateSubTabs = Tab.AddSubTabs
 
@@ -9816,6 +9847,8 @@ function Window.new(props)
 	props = props or {}
 	local self = setmetatable({}, Window)
 	self.Title = props.Title or props.Name or "MD3"
+	-- Every tab's AddSection becomes its own sub-tab (Tab props can override).
+	self._sectionsAsSubTabs = props.SectionsAsSubTabs == true
 	self.Flags = {}
 	self.Tabs = {}
 	self.SelectedTab = nil
