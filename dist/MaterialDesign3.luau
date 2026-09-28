@@ -5815,14 +5815,25 @@ function Signal:Connect(fn)
 end
 
 function Signal:Fire(...)
+	-- Snapshot first: task.spawn runs handlers immediately, and a handler that
+	-- connects, disconnects or calls DisconnectAll (e.g. Dialog.Dismissed ->
+	-- Destroy) would otherwise break pairs() with "invalid key to 'next'".
+	local snapshot = {}
 	for connection, fn in pairs(self._handlers) do
-		if connection._connected then
-			task.spawn(fn, ...)
+		snapshot[#snapshot + 1] = connection
+		snapshot[#snapshot + 1] = fn
+	end
+	for i = 1, #snapshot, 2 do
+		if snapshot[i]._connected then
+			task.spawn(snapshot[i + 1], ...)
 		end
 	end
 end
 
 function Signal:DisconnectAll()
+	for connection in pairs(self._handlers) do
+		connection._connected = false
+	end
 	table.clear(self._handlers)
 end
 
