@@ -373,7 +373,10 @@ services.UserInputService = {
 	InputEnded = makeSignal(),
 	TouchEnabled = false,
 	KeyboardEnabled = true,
+	MouseBehavior = Enum.MouseBehavior.Default,
 	GetFocusedTextBox = function() return nil end,
+	-- Tests only send mouse movement mid-drag, with the button held.
+	IsMouseButtonPressed = function() return true end,
 }
 
 -- JSON stand-in: keeps encoded tables in memory and hands back a key,
@@ -434,6 +437,7 @@ task = {
 		end
 	end,
 	delay = function() end,
+	defer = function() end, -- like delay: deferred work never runs here
 	wait = function() return coroutine.yield() end,
 }
 
@@ -449,6 +453,27 @@ typeof = function(value)
 		return "Instance"
 	end
 	return nativeTypeof(value)
+end
+
+-- Roblox's utf8 has graphemes(); the standalone luau CLI doesn't.
+if not utf8.graphemes then
+	utf8 = table.clone(utf8) -- the builtin table is read-only
+	utf8.graphemes = function(s)
+		local positions = {}
+		for p in utf8.codes(s) do
+			table.insert(positions, p)
+		end
+		local i = 0
+		return function()
+			i += 1
+			local p = positions[i]
+			if p == nil then
+				return nil
+			end
+			local nextP = positions[i + 1]
+			return p, (nextP or #s + 1) - 1
+		end
+	end
 end
 
 return { makeSignal = makeSignal }

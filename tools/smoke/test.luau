@@ -722,6 +722,8 @@ blocks[1]:SetVisible(true)
 custom:Destroy()
 check(#wm._blocks == 4 and custom.Instance.Parent == nil, "Block:Destroy did not remove the block")
 
+-- HUD drags are clamped to the screen; the mock's default size is tiny.
+layer.AbsoluteSize = Vector2.new(1920, 1080)
 local wmStart = wm.Instance.Position
 wm.Instance.InputBegan:Fire(click)
 uis.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = Vector3.new(60, 40, 0) })
