@@ -99,7 +99,7 @@ Window:Notify({ Title = "Loaded", Content = "按 RightShift 隱藏／顯示", Ic
 - **手機支援**：觸控裝置會自動出現可拖曳的浮動按鈕來開關視窗；螢幕太小時視窗會自動等比縮小（`UIScale`）。
 - **防偵測／相容性**：ScreenGui 優先放進 `gethui()`，其次 `CoreGui`，最後才是 `PlayerGui`；有 `syn.protect_gui` / `protectgui` 會自動套用；ScreenGui 名稱隨機。
 - **重複執行不會疊視窗**：同一個 `Title`（或 `Id`）的視窗再次建立時，舊的會先被卸載（透過 `getgenv()` 記錄）。
-- **真正的 Material 圖標**：跟 NeverLose 載入圖片的方式一樣（`HttpGet` → `writefile` → `getcustomasset`），把 Google 官方 Material Icons 預先畫成的圖片（sprite sheet，每種樣式一張 PNG）下載並載入，不需要上傳任何資產。預設是 M3 風格的**線條版（Outlined）**，可用 `IconStyle` 或設定頁換成 `Filled`（實心）、`Round`（圓角）或 `Sharp`（直角）；載入失敗或 executor 不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字或中文字。
+- **真正的 Material 圖標**：跟 NeverLose 載入圖片的方式一樣（`HttpGet` → `writefile` → `getcustomasset`），把 Google 官方 Material 圖標預先畫成的圖片（sprite sheet，每種樣式分成多頁 PNG，用到才下載）下載並載入，**共約 4,300 個圖標**（全部 Material Icons + MD3 的 Material Symbols 新圖標），不需要上傳任何資產。預設是 M3 風格的**線條版（Outlined）**，可用 `IconStyle` 或設定頁換成 `Filled`（實心）、`Round`（圓角）或 `Sharp`（直角）；載入失敗或 executor 不支援時改用 Roblox 客戶端內建的 BuilderIcons 字型（免下載），再不行才退回簡單符號，不會出現方塊字或中文字。
 - **外部圖片**：所有 `Icon` / `Logo` / 通知的 `Image` 都可以直接填網址，會自動下載並透過 `getcustomasset` 載入（見下方「載入外部圖片」）。
 - **設定檔**：`Window:SaveConfig(name)` / `LoadConfig(name)` / `ListConfigs()` / `DeleteConfig(name)` / `SetAutoLoad(name)`，存成 JSON（Color3、KeyCode 會自動序列化）。
 - **即時換色**：`Window.Theme:SetMode("Light")`、`Window.Theme:SetThemeColor(color)`、`Window.Theme:SetIconColor(color)`、`Window.Theme:SetTextColor(color)`，整個視窗立即重新上色。設定頁的 Appearance 區塊也有 **Theme color／Icon color／Text color** 三個選色器可以直接調（「Reset icon & text colors」還原）。
@@ -398,20 +398,29 @@ end)
 
 **在 executor 上不用做任何事**：`CreateWindow` 會在背景用 `MD3.IconImages.Load()` 載入圖標圖片（需要 executor 支援 `writefile` 與 `getcustomasset`）。視窗會先立刻出現（圖標暫時是 BuilderIcons／簡單符號），圖片一載入完就原地換成 Material 圖標。
 
-做法跟 [NeverLose](https://github.com/engnyg/NeverLose) 載入圖片一樣：`HttpGet` 下載 PNG → `writefile` 存進 `MD3/assets/` → `getcustomasset` 轉成圖片 ID → 用 `ContentProvider:PreloadAsync` 確認 Roblox 真的載入成功。每個圖標是從同一張 sprite sheet 用 `ImageRectOffset` 切出來，顏色跟著標籤的文字顏色（主題色）走。
+做法跟 [NeverLose](https://github.com/engnyg/NeverLose) 載入圖片一樣：`HttpGet` 下載 PNG → `writefile` 存進 `MD3/assets/` → `getcustomasset` 轉成圖片 ID → 用 `ContentProvider:PreloadAsync` 確認 Roblox 真的載入成功。每個圖標是從 sprite sheet 用 `ImageRectOffset` 切出來，顏色跟著標籤的文字顏色（主題色）走。
+
+**圖標有多少**：約 4,300 個名稱（4,314 個不同圖形）——Google [Material Icons](https://github.com/google/material-design-icons) 的全部 2,234 個（含 `discord`、`apple` 等品牌圖標），加上只有 MD3 [Material Symbols](https://fonts.google.com/icons) 才有的約 2,100 個新圖標（例如 `robot_2`、`skull`）。名稱就是 Google 官方的名稱，到 <https://fonts.google.com/icons> 找到想要的圖標、複製名稱即可，例如 `Icon = "rocket_launch"`。程式裡也能查：
+
+```lua
+MD3.Icons.Has("rocket_launch")   -- true：這個名稱有圖標
+MD3.Icons.Search("arrow")        -- 名稱含 "arrow" 的所有圖標（排序好的陣列）
+```
+
+**分頁載入**：每種樣式分成 23 頁（每頁 196 個，1008×1008 px，在 Roblox 1024 px 的圖片上限內）。第 0 頁放的是這個 UI 庫自己會用到的圖標，`CreateWindow` 只先下載這一頁；其他頁在第一次顯示該頁的圖標時才下載（每頁約 130 KB，下載一次後存在 workspace）。下載期間該圖標先顯示 BuilderIcons／簡單符號，載入完就原地換成圖片；某一頁下載失敗時只有那頁的圖標維持備用顯示，不會一直重試。
 
 | `IconStyle` | 樣式 | 圖片 |
 | --- | --- | --- |
-| `"Outlined"`（預設） | 線條版，M3 預設外觀 | [`assets/icons/MaterialIconsOutlined.png`](assets/icons/MaterialIconsOutlined.png)（~86 KB） |
-| `"Filled"` | 實心版 | `assets/icons/MaterialIconsFilled.png`（~74 KB） |
-| `"Round"` | 圓角 | `assets/icons/MaterialIconsRound.png`（~81 KB） |
-| `"Sharp"` | 直角 | `assets/icons/MaterialIconsSharp.png`（~71 KB） |
+| `"Outlined"`（預設） | 線條版，M3 預設外觀 | [`assets/icons/Outlined/`](assets/icons/Outlined/)`0.png`～`22.png` |
+| `"Filled"` | 實心版 | `assets/icons/Filled/` |
+| `"Round"` | 圓角 | `assets/icons/Round/` |
+| `"Sharp"` | 直角 | `assets/icons/Sharp/` |
 
-圖片由 [`tools/build_icon_sheets.py`](tools/build_icon_sheets.py) 從官方字型畫出（864×864，12 欄、每格 64 px + 4 px 間隔），對照表在 `src/Core/IconSheet.lua`。載入失敗時（下載到的不是 PNG、或 Roblox 載不進來）會保留原本顯示的樣式，不會壞掉。
+圖片由 [`tools/build_icon_sheets.py`](tools/build_icon_sheets.py) 從官方字型畫出（每頁 14 欄 × 14 列、每格 64 px + 4 px 間隔），對照表在 `src/Core/IconSheet.lua`。Material Icons 的圖標用該樣式的 Material Icons 字型畫（實心／線條的差別跟字型版一致，例如 `favorite` 是實心愛心、`favorite_border` 是空心）；只有 Material Symbols 才有的圖標用 Material Symbols 字型畫（Outlined 樣式用線條版，其他樣式用實心版）。載入失敗時（下載到的不是 PNG、或 Roblox 載不進來）會保留原本顯示的樣式，不會壞掉。
 
 > 為什麼不用字型：用 `getcustomasset` 產生的字型檔在部分 executor 上載不起來，而 Material 圖標在字型裡是 Unicode 私用區（PUA）字元——字型沒載入時，繁體中文 Windows 會用系統字型把它們畫成中文字。圖片沒有這個問題。現在沒有任何圖標來源時也不會再輸出 PUA 字元。
 >
-> 字型版本仍然保留：`MD3.IconFont.Load("MD3", "Outlined")`（Google 只提供 Outlined／Round／Sharp 的 `.otf`，`assets/fonts/` 是用 [`tools/convert_icon_fonts.py`](tools/convert_icon_fonts.py) 轉成的 TrueType 版）。同時載入時圖片優先。
+> 字型版本仍然保留：`MD3.IconFont.Load("MD3", "Outlined")`（Google 只提供 Outlined／Round／Sharp 的 `.otf`，`assets/fonts/` 是用 [`tools/convert_icon_fonts.py`](tools/convert_icon_fonts.py) 轉成的 TrueType 版）。同時載入時圖片優先。字型只有 Material Icons 的 2,234 個名稱；只有 Material Symbols 才有的圖標只能用圖片顯示。
 
 **執行中也能切換**，畫面上已經有的圖標會立刻重畫，不用重建 UI：
 - 內建設定頁（`Window:AddSettingsTab()`）的「Appearance → Icon style」下拉選單，選擇會存進設定檔（Flag `MD3_IconStyle`）。
@@ -430,9 +439,9 @@ Roblox 沒有內建 Material Symbols 字型，所以要顯示「真正的」M3 �
    MD3.Icons.SetFont(Font.new("rbxassetid://<你的字型資產ID>"))
    ```
 
-設定完成後，`Checkbox` 的勾勾／減號、`Chip` 的關閉按鈕都會自動改用 `Icons.lua` 內建的 Material 圖標字碼（`check`、`remove`、`close`…共 110+ 個，字碼取自官方 `MaterialIcons-Regular.codepoints`），純文字字元渲染、可直接套色/縮放，不是圖片、更不是 emoji。在呼叫 `SetFont` 之前，這些元件會先用簡單的幾何符號（`✓`/`−`/`✕`）當退場機制，避免字型未設定時顯示空白方塊；一旦設定字型就會自動切換成真正的 Material 圖標。
+設定完成後，`Checkbox` 的勾勾／減號、`Chip` 的關閉按鈕都會自動改用內建的 Material 圖標字碼（`check`、`remove`、`close`…全部 2,234 個 Material Icons 名稱，字碼取自官方 `MaterialIcons-Regular.codepoints`，存在 `IconSheet.lua`），純文字字元渲染、可直接套色/縮放，不是圖片、更不是 emoji。在呼叫 `SetFont` 之前，這些元件會先用簡單的幾何符號（`✓`/`−`/`✕`）當退場機制，避免字型未設定時顯示空白方塊；一旦設定字型就會自動切換成真正的 Material 圖標。
 
-需要表裡沒有的圖標時，可以從官方 `MaterialIcons-Regular.codepoints` 查字碼後用 `Icons.Register("name", 0xe000)` 加入；`Icons.CanRender(name)` 可判斷目前能不能畫出該圖標。
+字型版需要表裡沒有的圖標時（例如 Google 之後新增的），可以從官方 `MaterialIcons-Regular.codepoints` 查字碼後用 `Icons.Register("name", 0xe000)` 加入；`Icons.CanRender(name)` 可判斷目前能不能畫出該圖標。
 
 `Icons.Glyph("settings")` / `Icons.Apply(textObject, "settings")` 也可以在你自己的 UI 裡直接使用，或用來取代 `Button` / `IconButton` / `FAB` 目前吃的 `Icon = "rbxassetid://..."`（把 `Icon` 換成一個帶有 Material 圖標字型的 `TextLabel` 即可）。
 
