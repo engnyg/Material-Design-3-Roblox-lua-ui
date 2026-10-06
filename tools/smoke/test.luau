@@ -28,8 +28,8 @@ identifyexecutor = function() return "MockExecutor", "1.0" end
 local httpRequests = {}
 game.HttpGet = function(_, url)
 	table.insert(httpRequests, url)
-	if url:find("MaterialIconsSharp") then
-		return "404: Not Found" -- exercises the fallback to Filled
+	if url:find("MaterialIconsSharp") or url:find("/icons/Sharp/") or url:find("/icons/Filled/9%.png") then
+		return "404: Not Found" -- exercises the fallback to Filled / a failed page
 	elseif url:find("MaterialIcons%a*%-Regular%.ttf") then
 		return string.rep("x", 20000)
 	elseif url:find("%.png") then
@@ -247,22 +247,107 @@ sheetLabel.TextSize = 20
 sheetLabel.Parent = screen
 MD3.Icons.Apply(sheetLabel, "home", true)
 check(IconImages.Load("Filled") == true and IconImages.CurrentStyle == "Filled", "IconImages.Load failed")
-check(files["MD3/assets/MaterialIconsFilled.png"] ~= nil, "icon sheet not saved to the workspace")
+check(files["MD3/assets/MaterialIcons2-Filled-0.png"] ~= nil, "icon sheet not saved to the workspace")
 local sheetSprite = sheetLabel:FindFirstChild("MD3Icon")
 check(sheetSprite and sheetSprite.Visible and sheetLabel.Text == "", "existing icon did not switch to the sprite sheet")
-check(sheetSprite.Image == "rbxasset://custom/MD3/assets/MaterialIconsFilled.png", `sprite image wrong: {sheetSprite.Image}`)
+check(sheetSprite.Image == "rbxasset://custom/MD3/assets/MaterialIcons2-Filled-0.png", `sprite image wrong: {sheetSprite.Image}`)
 local homeIndex = MD3.IconSheet.Index.home
-check(sheetSprite.ImageRectOffset.X == (homeIndex % 12) * 72 + 4 and sheetSprite.ImageRectOffset.Y == math.floor(homeIndex / 12) * 72 + 4, "sprite cell offset wrong")
+check(homeIndex < MD3.IconSheet.PerPage, "the library's own icons should be on page 0")
+check(sheetSprite.ImageRectOffset.X == (homeIndex % 14) * 72 + 4 and sheetSprite.ImageRectOffset.Y == math.floor(homeIndex / 14) * 72 + 4, "sprite cell offset wrong")
 sheetLabel.TextColor3 = Color3.new(1, 0, 0)
 check(sheetSprite.ImageColor3 == Color3.new(1, 0, 0), "sprite did not follow the label color")
 check(IconImages.Load("Sharp") == false and IconImages.CurrentStyle == "Filled", "a broken sheet download should keep the previous style")
-check(files["MD3/assets/MaterialIconsSharp.png"] == nil, "a non-PNG download was left on disk")
+check(files["MD3/assets/MaterialIcons2-Sharp-0.png"] == nil, "a non-PNG download was left on disk")
 MOCK_ASSET_STATUS = Enum.AssetFetchStatus.Failure
 check(IconImages.Load("Round") == false and IconImages.CurrentStyle == "Filled", "an image Roblox can't load should be rejected")
 MOCK_ASSET_STATUS = nil
 check(select(2, IconImages.Load("Nope")) ~= nil, "unknown sheet style should report an error")
 IconImages.Unload()
 check(not sheetSprite.Visible and sheetLabel.Text ~= "", "Unload did not return to glyphs")
+
+do -- The whole icon set, on pages that load the first time they're needed
+	local Icons, Sheet = MD3.Icons, MD3.IconSheet
+	check(Sheet.Count > 4000 and Sheet.Pages > 1, `expected the full icon set, got {Sheet.Count} glyphs`)
+	check(Icons.Has("discord") and Icons.Has("robot_2") and Icons.Has("brightness_dark"), "legacy, Symbols-only and alias names should all be known")
+	check(not Icons.Has("not_an_icon") and not Icons.Has(nil :: any), "Has accepted an unknown name")
+	check(Sheet.Codepoints.home == 0xe88a and Sheet.Codepoints.robot_2 == nil, "font codepoints should cover Material Icons names only")
+	local arrows = Icons.Search("ARROW")
+	check(#arrows > 50 and table.find(arrows, "arrow_back") ~= nil and #Icons.Search("") >= Sheet.Count, "Search failed")
+	check(Sheet.Index.brightness_dark == Sheet.Index.brightness_4, "aliases should share a cell")
+
+	-- first name on page 3 / 9 (Sheet.Index is name -> cell)
+	local function nameOn(page)
+		for name, cell in Sheet.Index do
+			if cell // Sheet.PerPage == page and cell % Sheet.PerPage == 20 then
+				return name
+			end
+		end
+		error(`no icon on page {page}`)
+	end
+	local farName, brokenName = nameOn(3), nameOn(9)
+
+	check(IconImages.Load("Filled") == true, "IconImages.Load failed")
+	local requests = #httpRequests
+	local far = Instance.new("TextLabel")
+	far.Parent = screen
+	Icons.Apply(far, farName, true)
+	local farSprite = far:FindFirstChild("MD3Icon")
+	check(farSprite and farSprite.Visible and farSprite.Image == "rbxasset://custom/MD3/assets/MaterialIcons2-Filled-3.png", "an icon on another page should load that page")
+	check(farSprite.ImageRectOffset.X == (20 % 14) * 72 + 4 and farSprite.ImageRectOffset.Y == (20 // 14) * 72 + 4, "page-local cell offset wrong")
+	check(#httpRequests == requests + 1 and httpRequests[#httpRequests]:find("/icons/Filled/3.png", 1, true), "page 3 should be fetched once")
+	local sibling = Instance.new("TextLabel")
+	sibling.Parent = screen
+	Icons.Apply(sibling, nameOn(3), true)
+	check(#httpRequests == requests + 1, "a page should not be fetched twice")
+
+	-- A page that can't be downloaded: the icon falls back, the page isn't retried
+	local broken = Instance.new("TextLabel")
+	broken.Parent = screen
+	Icons.Apply(broken, brokenName, true)
+	local brokenSprite = broken:FindFirstChild("MD3Icon")
+	check(not (brokenSprite and brokenSprite.Visible), "an icon on a failed page should not show a sprite")
+	check(not Icons.CanRender(brokenName) or Icons.Resolve(brokenName) ~= "", "CanRender should not count a failed page")
+	requests = #httpRequests
+	Icons.Apply(broken, brokenName, true)
+	check(#httpRequests == requests, "a failed page should not be retried on every draw")
+
+	for _, label in { far, sibling, broken } do
+		label:Destroy()
+	end
+
+	-- Pages that load slowly: fallback first, the sprite once the page arrives
+	local pending = {}
+	local function slowLoader(page)
+		table.insert(pending, { page = page, thread = coroutine.running() })
+		return coroutine.yield()
+	end
+	Icons.SetSheet("rbxasset://page0", slowLoader)
+	local slow = Instance.new("TextLabel")
+	slow.Parent = screen
+	Icons.Apply(slow, farName, true)
+	local slowSprite = slow:FindFirstChild("MD3Icon")
+	check(#pending == 1 and pending[1].page == 3, "the loader should be asked for page 3")
+	check(not (slowSprite and slowSprite.Visible) and Icons.CanRender(farName), "a loading page shows the fallback but still counts as drawable")
+	Icons.Apply(slow, farName, true)
+	check(#pending == 1, "a loading page should not be requested again")
+	coroutine.resume(pending[1].thread, "rbxasset://page3")
+	slowSprite = slow:FindFirstChild("MD3Icon")
+	check(slowSprite and slowSprite.Visible and slowSprite.Image == "rbxasset://page3" and slow.Visible, "the icon should switch to the sprite once its page loads")
+
+	-- A style switch while a page loads: the stale page is dropped
+	Icons.SetSheet("rbxasset://other0", slowLoader)
+	local stale = pending[#pending]
+	Icons.SetSheet("rbxasset://newest0", function() return nil end)
+	coroutine.resume(stale.thread, "rbxasset://stale3")
+	check(slow:FindFirstChild("MD3Icon").Image ~= "rbxasset://stale3", "a page from a replaced sheet was shown")
+
+	-- Without a loader only page 0 comes from the sheet (old SetSheet(image) calls)
+	Icons.SetSheet("rbxasset://only0")
+	check(sheetLabel:FindFirstChild("MD3Icon").Image == "rbxasset://only0" and not slow:FindFirstChild("MD3Icon").Visible, "SetSheet(image) should cover page 0 only")
+
+	slow:Destroy()
+	IconImages.Unload()
+end
 
 -- External images: HttpGet -> writefile -> getcustomasset (cached)
 local Assets = MD3.Assets
@@ -378,9 +463,9 @@ check(Window.Flags.MD3_DarkMode and Window.Flags.MD3_ToggleKey, "settings tab fl
 local styleDropdown = Window.Flags.MD3_IconStyle
 check(styleDropdown and styleDropdown.Value == "Outlined", "settings tab icon style dropdown missing")
 local navSprite = main._icon:FindFirstChild("MD3Icon")
-check(navSprite and navSprite.Image:find("MaterialIconsOutlined") ~= nil, "tab icon not drawn from the Outlined sheet")
+check(navSprite and navSprite.Image:find("-Outlined-0.png", 1, true) ~= nil, "tab icon not drawn from the Outlined sheet")
 styleDropdown:Set("Round")
-check(IconImages.CurrentStyle == "Round" and navSprite.Image:find("MaterialIconsRound") ~= nil, "settings dropdown did not switch the icon style live")
+check(IconImages.CurrentStyle == "Round" and navSprite.Image:find("-Round-0.png", 1, true) ~= nil, "settings dropdown did not switch the icon style live")
 styleDropdown:Set("Sharp")
 check(IconImages.CurrentStyle == "Round" and styleDropdown.Value == "Round", "failed style switch should keep showing the previous style")
 styleDropdown:Set("Outlined")
